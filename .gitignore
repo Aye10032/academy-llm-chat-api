@@ -166,3 +166,6 @@ cython_debug/
 instance/*
 !instance/.gitignore
 
+/test/*
+
+*.db
