@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api import api_router
+from app.api.endpoints import auth, example
 
 
 @asynccontextmanager
@@ -21,5 +21,5 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 注册所有路由
-app.include_router(api_router, prefix="/api")
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(example.router, prefix="/api/example", tags=["example"])
