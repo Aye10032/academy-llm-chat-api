@@ -6,16 +6,17 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.services.auth import authenticate_user
-from app.db.database import get_db
-from app.api.authentication import get_current_user
+from app.api.deps import get_current_user, get_db
 from app.models.user import User
 
 router = APIRouter()
+
 
 # 新增登录请求的模型
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 @router.post("/token")
 async def login_for_access_token(
