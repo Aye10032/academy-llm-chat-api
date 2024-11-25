@@ -5,10 +5,10 @@ from loguru import logger
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel, Session
 
-from app.core.config import settings
+from app.core.config import get_settings
 
 connect_args = {"check_same_thread": False}
-engine = create_engine(settings.SQLITE_DATABASE_URL, connect_args=connect_args)
+engine = create_engine(get_settings.SQLITE_DATABASE_URL, connect_args=connect_args)
 
 
 def create_db_and_tables():

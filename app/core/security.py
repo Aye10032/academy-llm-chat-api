@@ -7,7 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
 from passlib.context import CryptContext
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.db.session import SessionDep
 from app.models.user import User
 from app.schemas.auth import TokenData
@@ -15,17 +15,6 @@ from app.schemas.auth import TokenData
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-
-# fake_users_db = {
-#     "johndoe": {
-#         "username": "johndoe",
-#         "full_name": "John Doe",
-#         "email": "johndoe@example.com",
-#         "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
-#         "disabled": False,
-#     }
-# }
 
 
 def verify_password(plain_password, hashed_password):
@@ -56,7 +45,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, get_settings.SECRET_KEY, algorithm=get_settings.ALGORITHM)
     return encoded_jwt
 
 
@@ -70,7 +59,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, get_settings.SECRET_KEY, algorithms=[get_settings.ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.core.config import settings
+from app.core.config import get_settings
 from app.api.v1.endpoints import auth
 from app.db.session import create_db_and_tables
 
@@ -16,8 +16,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.VERSION,
+    title=get_settings.PROJECT_NAME,
+    version=get_settings.VERSION,
     lifespan=lifespan
 )
 
