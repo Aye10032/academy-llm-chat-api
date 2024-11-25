@@ -1,67 +1,91 @@
-from dataclasses import dataclass
-from datetime import datetime, timedelta, UTC
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Optional
 
-import bcrypt
 import jwt
+from fastapi import HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordBearer
+from jwt import InvalidTokenError
 from passlib.context import CryptContext
+
 from app.core.config import settings
-
-
-@dataclass
-class SolveBugBcryptWarning:
-    __version__: str = getattr(bcrypt, "__version__")
-
-
-setattr(bcrypt, "__about__", SolveBugBcryptWarning())
+from app.db.session import SessionDep
+from app.models.user import User
+from app.schemas.auth import TokenData
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """
-    Create a JWT access token.
-
-    Args:
-        data (dict): A dictionary containing the data to encode in the token.
-        expires_delta (Optional[timedelta]): An optional timedelta for the token expiration.
-                                             If not provided, the token will expire in 15 minutes.
-
-    Returns:
-        str: A JWT access token as a string.
-    """
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
-    else:
-        expire = datetime.now(UTC) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
-    return encoded_jwt
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify a plain password against a hashed password.
+# fake_users_db = {
+#     "johndoe": {
+#         "username": "johndoe",
+#         "full_name": "John Doe",
+#         "email": "johndoe@example.com",
+#         "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+#         "disabled": False,
+#     }
+# }
 
-    Args:
-        plain_password (str): The plain text password to verify.
-        hashed_password (str): The hashed password to compare against.
 
-    Returns:
-        bool: True if the password matches the hash, False otherwise.
-    """
+def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def get_password_hash(password: str) -> str:
-    """
-    Hash a plain text password.
-
-    Args:
-        password (str): The plain text password to hash.
-
-    Returns:
-        str: The hashed password as a string.
-    """
+def get_password_hash(password):
     return pwd_context.hash(password)
+
+
+def get_user(session: SessionDep, email: str):
+    return session.query(User).filter(User.email == email).first()
+
+
+def authenticate_user(session: SessionDep, email: str, password: str):
+    user = get_user(session, email)
+    if not user:
+        return False
+    if not verify_password(password, user.hashed_password):
+        return False
+    return user
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+
+
+async def get_current_user(
+        token: Annotated[str, Depends(oauth2_scheme)],
+        session: SessionDep
+):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+        token_data = TokenData(email=email)
+    except InvalidTokenError:
+        raise credentials_exception
+    user = get_user(session, email=token_data.email)
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+async def get_current_active_user(
+        current_user: Annotated[User, Depends(get_current_user)],
+):
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
