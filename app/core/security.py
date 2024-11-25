@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
+import bcrypt
 import jwt
 from fastapi import HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
@@ -11,6 +13,14 @@ from app.core.config import get_settings
 from app.db.session import SessionDep
 from app.models.user import User
 from app.schemas.auth import TokenData
+
+
+@dataclass
+class SolveBugBcryptWarning:
+    __version__: str = getattr(bcrypt, "__version__")
+
+
+setattr(bcrypt, "__about__", SolveBugBcryptWarning())
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
