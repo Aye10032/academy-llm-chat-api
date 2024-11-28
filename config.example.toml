@@ -1,0 +1,5 @@
+[server_setting]
+service_host_ip = "127.0.0.1"
+service_host_port = 8000
+sqlite_database_url = "sqlite:///./sql_app.db"
+logging_level = "INFO"

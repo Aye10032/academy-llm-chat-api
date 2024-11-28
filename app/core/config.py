@@ -1,20 +1,27 @@
 import secrets
 from functools import lru_cache
+from typing import Type
 
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, Field, ConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource, TomlConfigSettingsSource
+
+
+class ServerSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    SERVICE_HOST_IP: str
+    SERVICE_HOST_PORT: int
+
+    SQLITE_DATABASE_URL: str
+
+    LOGGING_LEVEL: str
 
 
 class Settings(BaseSettings):
-    """
-    Settings class to hold configuration variables for the application.
-
-    Attributes:
-        PROJECT_NAME (str): The name of the project.
-        VERSION (str): The version of the project.
-        SECRET_KEY (str): A secret key for cryptographic operations.
-        ACCESS_TOKEN_EXPIRE_MINUTES (int): The expiration time for access tokens in minutes.
-        SQLITE_DATABASE_URL (str): The database URL for SQLite.
-    """
+    model_config = SettingsConfigDict(
+        toml_file='config.toml',
+        case_sensitive=False
+    )
 
     PROJECT_NAME: str = "Academic LLM Chat API"
     VERSION: str = "1.0.0"
@@ -23,24 +30,30 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
-    SERVEICE_HOST_IP: str = "127.0.0.1"
-    SERVEICE_HOST_PORT: int = 8000
+    server_setting: ServerSetting
 
-    SQLITE_DATABASE_URL: str = "sqlite:///./sql_app.db"
-
-    LOGGING_LEVEL: str = "INFO"
-
-    class Config:
-        """
-        Configuration class for additional settings.
-
-        Attributes:
-            case_sensitive (bool): Whether the settings are case-sensitive.
-        """
-        case_sensitive = True
+    @classmethod
+    def settings_customise_sources(
+            cls,
+            settings_cls: Type[BaseSettings],
+            init_settings: PydanticBaseSettingsSource,
+            env_settings: PydanticBaseSettingsSource,
+            dotenv_settings: PydanticBaseSettingsSource,
+            file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (TomlConfigSettingsSource(settings_cls),)
 
 
 @lru_cache
 def get_settings():
     settings = Settings()
     return settings
+
+
+def main() -> None:
+    setting = Settings()
+    print(setting)
+
+
+if __name__ == '__main__':
+    main()

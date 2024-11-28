@@ -1,8 +1,15 @@
+import os.path
+import shutil
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
 from loguru import logger
+
+if not os.path.exists('config.toml'):
+    shutil.copy('config.example.toml.', 'config.toml')
+    logger.error('建配置文件"config.toml"不存在，已自动初始化，请完善相关设置')
+    exit()
 
 from app.core.config import get_settings
 from app.api.v1.endpoints import auth
@@ -32,8 +39,8 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 def main() -> None:
     config = uvicorn.Config(
         "main:app",
-        host=get_settings().SERVEICE_HOST_IP,
-        port=get_settings().SERVEICE_HOST_PORT,
+        host=get_settings().server_setting.SERVICE_HOST_IP,
+        port=get_settings().server_setting.SERVICE_HOST_PORT,
         access_log=True,
         workers=1,
         reload=True

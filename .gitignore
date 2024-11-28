@@ -169,3 +169,4 @@ instance/*
 /test/*
 
 *.db
+/config.toml
