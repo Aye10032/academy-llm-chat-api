@@ -34,7 +34,7 @@ async def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 
-@router.get("/users/me/", response_model=UserPublic)
+@router.get("/me/", response_model=UserPublic)
 async def read_users_me(
         current_user: Annotated[User, Depends(get_current_active_user)],
 ):
