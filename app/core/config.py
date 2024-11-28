@@ -23,7 +23,12 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
+    SERVEICE_HOST_IP: str = "127.0.0.1"
+    SERVEICE_HOST_PORT: int = 8000
+
     SQLITE_DATABASE_URL: str = "sqlite:///./sql_app.db"
+
+    LOGGING_LEVEL: str = "INFO"
 
     class Config:
         """

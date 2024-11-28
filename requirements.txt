@@ -1,12 +1,13 @@
 # 后端框架相关
-fastapi>=0.68.0
-uvicorn>=0.15.0
-PyJWT>=2.10.0
-sqlalchemy>=1.4.23
-sqlmodel>=0.0.22
-pydantic>=1.8.2
-pydantic-settings>=2.0.0
-pydantic[email]
-bcrypt>=4.2.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.5
+fastapi~=0.112.0
+uvicorn~=0.30.0
+PyJWT~=2.10.0
+sqlalchemy~=2.0.36
+sqlmodel~=0.0.22
+pydantic[email]~=2.8.0
+pydantic-settings~=2.6.0
+bcrypt~=4.2.0
+passlib[bcrypt]~=1.7.4
+python-multipart~=0.0.5
+
+loguru~=0.7.2
