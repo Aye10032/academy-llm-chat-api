@@ -39,8 +39,8 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 def main() -> None:
     config = uvicorn.Config(
         "main:app",
-        host=get_settings().server_setting.SERVICE_HOST_IP,
-        port=get_settings().server_setting.SERVICE_HOST_PORT,
+        host=get_settings().server.SERVICE_HOST_IP,
+        port=get_settings().server.SERVICE_HOST_PORT,
         access_log=True,
         workers=1,
         reload=True

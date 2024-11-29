@@ -1,5 +1,30 @@
-[server_setting]
+[server]
 service_host_ip = "127.0.0.1"
 service_host_port = 8000
-sqlite_database_url = "sqlite:///./sql_app.db"
+sqlite_database_url = "sqlite:///./data/sql_app.db"
 logging_level = "INFO"
+proxy = "http://127.0.0.1:7890"
+
+
+[retriever.embedding]
+model = "BAAI/bge-m3"
+save_local = true
+fp16 = true
+normalize = true
+device = "cuda"
+
+[retriever.reranker]
+model = "BAAI/bge-reranker-v2-m3"
+save_local = true
+fp16 = true
+normalize = true
+device = "cuda"
+
+[llm.openai]
+use_proxy = true
+api_key = ""
+
+[llm.zhipu]
+use_proxy = false
+base_url = "https://open.bigmodel.cn/api/paas/v4/"
+api_key = ""

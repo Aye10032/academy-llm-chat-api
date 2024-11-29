@@ -169,4 +169,5 @@ instance/*
 /test/*
 
 *.db
-/config.toml
+config.toml
+/data/*
