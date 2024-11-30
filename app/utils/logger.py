@@ -23,9 +23,14 @@ class InterceptHandler(logging.Handler):
             frame = cast(FrameType, frame.f_back)
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage(),
-        )
+        if '/api/v1/auth' in record.getMessage():
+            logger.opt(depth=depth, exception=record.exc_info).log(
+                'DEBUG', record.getMessage(),
+            )
+        else:
+            logger.opt(depth=depth, exception=record.exc_info).log(
+                level, record.getMessage(),
+            )
 
 
 now = datetime.now()
