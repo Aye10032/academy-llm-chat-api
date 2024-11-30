@@ -12,11 +12,9 @@ if not os.path.exists('config.toml'):
     exit()
 
 from app.core.config import get_settings
-from app.api.v1.endpoints import auth
+from app.api.v1.endpoints import auth, chat
 from app.db.session import create_db_and_tables
 from app.utils.logger import init_logging
-
-init_logging()
 
 
 @asynccontextmanager
@@ -34,6 +32,7 @@ app = FastAPI(
 )
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 
 
 def main() -> None:
