@@ -1,24 +1,34 @@
 import os
 import secrets
+import shutil
 from functools import lru_cache
 from typing import Type, Self, Literal, Optional
 
+from loguru import logger
 from pydantic import BaseModel, Field, ConfigDict, model_validator, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource, TomlConfigSettingsSource
+
+
+class ServerNetworkSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    SERVICE_HOST_IP: str
+    SERVICE_HOST_PORT: int
+    PROXY: str
 
 
 class ServerSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
-    SERVICE_HOST_IP: str
-    SERVICE_HOST_PORT: int
-
-    SQLITE_DATABASE_URL: str
-
+    DATABASE_URL: str
     LOGGING_LEVEL: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR']
+    INIT_USER: str
+    INIT_PASSWORD: str
+
+    network: ServerNetworkSetting
 
 
-class ModelBaseSetting(BaseModel):
+class BaseModelSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
     MODEL: str
@@ -36,12 +46,20 @@ class ModelBaseSetting(BaseModel):
         return self
 
 
+class KnowledgeBaseSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    VECTOR_DB_FILE: str
+    DOC_DB_FILE: str
+
+
 class RetrieverSetting(BaseModel):
-    embedding: ModelBaseSetting
-    reranker: ModelBaseSetting
+    embedding: BaseModelSetting
+    reranker: BaseModelSetting
+    knowledge_base: KnowledgeBaseSetting
 
 
-class LLMBaseSetting(BaseModel):
+class BaseLLMSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
     USE_PROXY: bool
@@ -51,8 +69,8 @@ class LLMBaseSetting(BaseModel):
 
 
 class LLMSetting(BaseModel):
-    openai: LLMBaseSetting
-    zhipu: LLMBaseSetting
+    openai: BaseLLMSetting
+    zhipu: BaseLLMSetting
 
 
 class Settings(BaseSettings):
@@ -67,8 +85,6 @@ class Settings(BaseSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
-
-    PROXY: str
 
     server: ServerSetting
     retriever: RetrieverSetting
@@ -88,6 +104,11 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    if not os.path.exists('config.toml'):
+        shutil.copy('config.example.toml.', 'config.toml')
+        logger.error('建配置文件"config.toml"不存在，已自动初始化，请完善相关设置')
+        exit()
+
     settings = Settings()
     return settings
 

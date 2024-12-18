@@ -1,8 +1,12 @@
 [server]
+database_url = "sqlite:///./data/app.db"
+logging_level = "INFO"
+init_user = "admin@example.com"
+init_password = "password"
+
+[server.network]
 service_host_ip = "127.0.0.1"
 service_host_port = 8000
-sqlite_database_url = "sqlite:///./data/sql_app.db"
-logging_level = "INFO"
 proxy = "http://127.0.0.1:7890"
 
 
@@ -19,6 +23,10 @@ save_local = true
 fp16 = true
 normalize = true
 device = "cuda"
+
+[retriever.knowledge_base]
+vector_db_file = "./data/knowledge_base/vector.db"
+doc_db_file = "./data/knowledge_base/document.db"
 
 [llm.openai]
 use_proxy = true

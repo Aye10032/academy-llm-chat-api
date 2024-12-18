@@ -1,28 +1,21 @@
-import os.path
-import shutil
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
 from loguru import logger
 
-if not os.path.exists('config.toml'):
-    shutil.copy('config.example.toml.', 'config.toml')
-    logger.error('建配置文件"config.toml"不存在，已自动初始化，请完善相关设置')
-    exit()
-
 from app.core.config import get_settings
-from app.api.v1.endpoints import auth, chat
+from app.api.v1.endpoints import auth, chat, rag
 from app.db.session import create_db_and_tables
 from app.utils.logger import init_logging
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(main_app: FastAPI): # pylint: disable=unused-argument
     create_db_and_tables()
     yield
 
-    pass
+    logger.info('server stop')
 
 
 app = FastAPI(
@@ -31,18 +24,19 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
+app.include_router(auth.router, prefix='/api/v1/auth', tags=['auth'])
+app.include_router(chat.router, prefix='/api/v1/chat', tags=['chat'])
+app.include_router(rag.router, prefix='/api/v1/rag', tags=['rag'])
 
 
 def main() -> None:
     config = uvicorn.Config(
-        "main:app",
-        host=get_settings().server.SERVICE_HOST_IP,
-        port=get_settings().server.SERVICE_HOST_PORT,
+        'main:app',
+        host=get_settings().server.network.SERVICE_HOST_IP,
+        port=get_settings().server.network.SERVICE_HOST_PORT,
         access_log=True,
         workers=1,
-        reload=True
+        # reload=True
     )
     server = uvicorn.Server(config)
     init_logging()
@@ -50,7 +44,7 @@ def main() -> None:
     try:
         server.run()
     except KeyboardInterrupt as e:
-        logger.error("server closed")
+        logger.error(f'server closed for {e}')
 
 
 if __name__ == '__main__':
