@@ -6,7 +6,12 @@ from typing import Type, Self, Literal, Optional
 
 from loguru import logger
 from pydantic import BaseModel, Field, ConfigDict, model_validator, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource, TomlConfigSettingsSource
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+    PydanticBaseSettingsSource,
+    TomlConfigSettingsSource
+)
 
 
 class ServerNetworkSetting(BaseModel):
@@ -36,12 +41,12 @@ class BaseModelSetting(BaseModel):
     FP16: bool
     NORMALIZE: bool
     DEVICE: str
-    LOCAL_PATH: str = Field(default="", init=False)
+    LOCAL_PATH: str = Field(default='', init=False)
 
     @model_validator(mode='after')
     def set_local_path(self) -> Self:
         local_path = os.path.join('data', 'model', self.MODEL)
-        self.LOCAL_PATH = local_path
+        self.LOCAL_PATH = local_path # pylint: disable=invalid-name
 
         return self
 
@@ -79,11 +84,11 @@ class Settings(BaseSettings):
         alias_generator=lambda field_name: field_name.lower()
     )
 
-    PROJECT_NAME: str = "Academic LLM Chat API"
-    VERSION: str = "1.0.0"
+    PROJECT_NAME: str = 'Academic LLM Chat API'
+    VERSION: str = '1.0.0'
 
     SECRET_KEY: str = secrets.token_urlsafe(32)
-    ALGORITHM: str = "HS256"
+    ALGORITHM: str = 'HS256'
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     server: ServerSetting

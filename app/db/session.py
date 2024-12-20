@@ -13,7 +13,6 @@ engine = create_engine(get_settings().server.DATABASE_URL, connect_args=connect_
 
 @logger.catch
 def create_db_and_tables():
-    logger.debug('create db')
     SQLModel.metadata.create_all(engine)
 
 
@@ -22,8 +21,8 @@ def get_session():
         yield session
 
 
-# 添加一个函数用于测试目的
-def get_test_session():
+# 用于单次调用
+def get_simple_session():
     return Session(engine)
 
 
