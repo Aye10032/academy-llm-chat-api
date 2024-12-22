@@ -5,7 +5,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from app.core.security import get_current_active_user
-from app.models.user import User
+from app.models.user import UserTable
 from llm.core.model_core import load_glm4_flash
 
 
@@ -19,7 +19,7 @@ router = APIRouter()
 @router.post("/question")
 async def chat(
     request: ChatRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     llm = load_glm4_flash()
 

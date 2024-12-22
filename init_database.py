@@ -14,13 +14,14 @@ from tqdm import tqdm
 from app.core.config import get_settings
 from app.core.security import get_password_hash
 from app.db.session import get_simple_session, create_db_and_tables
-from app.models.user import User
+from app.models.knowledge_base import KnowledgeBaseTable
+from app.models.user import UserTable
 from app.schemas.user import UserRole, UserPublic
 from llm.core.embedding_core import BgeM3Embeddings
 from llm.core.model_core import load_embedding
 
 logger.remove()
-handler_id = logger.add(sys.stderr, level="DEBUG")
+handler_id = logger.add(sys.stderr, level='DEBUG')
 logger.add('log/init_database.log')
 
 
@@ -143,24 +144,24 @@ def init_user():
     db = get_simple_session()
     create_db_and_tables()
 
-    statement = select(User).where(User.email == setting.server.INIT_USER)
-    test_user = db.exec(statement).first()
-    if test_user:
-        logger.warning("User already exist")
-        logger.warning(UserPublic(**test_user.model_dump()))
+    statement = select(UserTable).where(UserTable.email == setting.server.INIT_USER)
+    check_user = db.exec(statement).first()
+    if check_user:
+        logger.warning('User already exist')
+        logger.warning(UserPublic.model_validate(check_user))
         return
 
-    test_user: User = User(
+    test_user = UserTable(
         email=setting.server.INIT_USER,
-        username="Admin",
+        username='Admin',
         hashed_password=get_password_hash(setting.server.INIT_PASSWORD),
         is_active=True,
-        role=UserRole.admin
+        role=UserRole.ADMIN
     )
 
     db.add(test_user)
     db.commit()
-    logger.info("Done")
+    logger.info('Done')
 
     db.close()
 

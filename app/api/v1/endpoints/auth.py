@@ -7,7 +7,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from app.core.config import get_settings
 from app.core.security import authenticate_user, create_access_token, get_current_active_user
 from app.db.session import SessionDep
-from app.models.user import User
+from app.models.user import UserTable
 from app.schemas.auth import Token
 from app.schemas.user import UserPublic
 
@@ -36,6 +36,6 @@ async def login_for_access_token(
 
 @router.get("/me/", response_model=UserPublic)
 async def read_users_me(
-        current_user: Annotated[User, Depends(get_current_active_user)],
+        current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     return current_user
