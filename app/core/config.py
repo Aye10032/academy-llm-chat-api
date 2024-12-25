@@ -2,7 +2,7 @@ import os
 import secrets
 import shutil
 from functools import lru_cache
-from typing import Type, Self, Literal, Optional
+from typing import Type, Self, Literal, Optional, Any
 
 from loguru import logger
 from pydantic import BaseModel, Field, ConfigDict, model_validator, SecretStr
@@ -46,16 +46,43 @@ class BaseModelSetting(BaseModel):
     @model_validator(mode='after')
     def set_local_path(self) -> Self:
         local_path = os.path.join('data', 'model', self.MODEL)
-        self.LOCAL_PATH = local_path # pylint: disable=invalid-name
+        self.LOCAL_PATH = local_path  # pylint: disable=invalid-name
 
         return self
+
+
+class MilvusSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    URI: str
+    USERNAME: str
+    PASSWORD: str
+    TOKEN: str
+    SECURE: bool
+
+    def get_conn_args(self, db_name: str = 'default') -> dict[str, Any]:
+        return {
+            'uri': self.URI,
+            'user': self.USERNAME,
+            'password': self.PASSWORD,
+            'db_name': db_name,
+            'token': self.TOKEN,
+            'secure': self.SECURE,
+        }
 
 
 class KnowledgeBaseSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
-    VECTOR_DB_FILE: str
-    DOC_DB_FILE: str
+    STORE_PATH: str
+    DOC_URL: str
+    milvus: MilvusSetting
+
+    @model_validator(mode='after')
+    def create_path(self) -> Self:
+        os.makedirs(self.STORE_PATH, exist_ok=True)
+
+        return self
 
 
 class RetrieverSetting(BaseModel):

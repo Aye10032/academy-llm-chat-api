@@ -25,8 +25,15 @@ normalize = true
 device = "cuda"
 
 [retriever.knowledge_base]
-vector_db_file = "./data/knowledge_base/vector.db"
-doc_db_file = "./data/knowledge_base/document.db"
+store_path = './data/knowledge_base'
+doc_url = "sqlite:///./data/knowledge_base/document.db"
+
+[retriever.knowledge_base.milvus]
+uri = 'http://127.0.0.1:19530'
+username = ''
+password = ''
+token = ''
+secure = false
 
 [llm.openai]
 use_proxy = true
