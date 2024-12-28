@@ -1,5 +1,6 @@
 from enum import IntEnum
 
+from pydantic import EmailStr
 from sqlmodel import SQLModel, Field
 
 
@@ -9,8 +10,11 @@ class UserRole(IntEnum):
     ADMIN = 2
 
 
-class UserPublic(SQLModel):
-    email: str = Field(index=True, unique=True)
+class BaseUser(SQLModel):
     username: str = Field(default="")
-    is_active: bool = Field(default=True)
+    email: EmailStr = Field(index=True, unique=True)
     role: UserRole = Field(default=UserRole.VISITOR)
+
+
+class UserPublic(BaseUser):
+    is_active: bool = Field(default=True)
