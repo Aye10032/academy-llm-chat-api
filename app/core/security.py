@@ -8,9 +8,9 @@ from fastapi import HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
 from passlib.context import CryptContext
-from sqlmodel import select
 
 from app.core.config import get_settings
+from app.crud.user import get_user
 from app.db.session import SessionDep
 from app.models.user import UserTable
 from app.schemas.auth import TokenData
@@ -34,11 +34,6 @@ def verify_password(plain_password, hashed_password) -> bool:
 
 def get_password_hash(password) -> str:
     return pwd_context.hash(password)
-
-
-def get_user(session: SessionDep, email: str) -> UserTable:
-    statement = select(UserTable).where(UserTable.email == email)
-    return session.exec(statement).first()
 
 
 def authenticate_user(session: SessionDep, email: str, password: str) -> bool | UserTable:
