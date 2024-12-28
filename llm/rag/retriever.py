@@ -1,6 +1,8 @@
+from datetime import datetime
 from typing import Optional, Any, Literal
 
 from langchain.retrievers import ParentDocumentRetriever
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.stores import BaseStore
 from langchain_core.vectorstores import VectorStore
@@ -10,11 +12,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import get_settings
 from llm.rag.storage import SqliteDocStore
+from llm.schemas.markdown import MARKDOWN
 
 retriever_cfg = get_settings().retriever
 
 
-def get_vector_db(
+def create_vector_db(
         table_name: str,
         embedding_model: Embeddings,
         *,
@@ -38,7 +41,53 @@ def get_vector_db(
         collection_name=table_name,
         connection_args=retriever_cfg.knowledge_base.milvus.get_conn_args(db_name),
         index_params=index_params,
-        search_params={'metric_type': 'L2', 'params': {'ef': 10}},
+        auto_id=True,
+        enable_dynamic_field=False,
+    )
+
+    init_doc = Document(
+        page_content='test text',
+        metadata={
+            'title': 'About this collection',
+            'section': 'Abstract',
+            'author': 'administrator',
+            'year': datetime.now().year,
+            'type': '',
+            'source': 'collection',
+            'source_type': MARKDOWN,
+            'doc_id': ''
+        }
+    )
+    init_ids = vector_db.add_documents([init_doc])
+    vector_db.delete(init_ids)
+
+    return vector_db
+
+
+def get_vector_db(
+        table_name: str,
+        embedding_model: Embeddings,
+        *,
+        db_name: str = 'default',
+        ef: int = 10
+) -> Milvus:
+    """
+    Retrieve a Milvus vector database instance.
+
+    Args:
+        table_name (str): The name of the table to use in the vector database.
+        embedding_model (Embeddings): The embedding model to use for vectorization.
+        db_name (str): The name of the database. Defaults to 'default'.
+        ef:
+
+    Returns:
+        Milvus: An instance of the Milvus vector database.
+    """
+    vector_db: milvus = Milvus(
+        embedding_model,
+        collection_name=table_name,
+        connection_args=retriever_cfg.knowledge_base.milvus.get_conn_args(db_name),
+        search_params={'metric_type': 'L2', 'params': {'ef': ef}},
         auto_id=True,
         enable_dynamic_field=False,
     )

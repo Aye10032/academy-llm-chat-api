@@ -1,15 +1,22 @@
 import argparse
+import glob
+import os.path
 import sys
 from argparse import Namespace
+from datetime import datetime
 
 from loguru import logger
-from sqlmodel import select
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
+from app.crud.knowledge_base import insert_knowledge_base, KBExistError
+from app.crud.user import insert_user, UserExistError
 from app.db.session import get_simple_session, create_db_and_tables
-from app.models import *  # pylint: disable=wildcard-import
-from app.schemas.user import UserRole, UserPublic
+from app.models import UserTable, KnowledgeBaseTable
+from app.schemas.user import UserRole
+from app.utils.validator import validate_input, simple_char_valid
+from llm.core.model_core import load_embedding
+from llm.rag.retriever import create_vector_db
 
 logger.remove()
 handler_id = logger.add(sys.stderr, level='DEBUG')
@@ -17,16 +24,6 @@ logger.add('log/init_database.log')
 
 
 def init_user(email: str, password: str):
-    db = get_simple_session()
-    create_db_and_tables()
-
-    statement = select(UserTable).where(UserTable.email == email)
-    check_user = db.exec(statement).first()
-    if check_user:
-        logger.warning('User already exist')
-        logger.warning(UserPublic.model_validate(check_user))
-        return
-
     test_user = UserTable(
         email=email,
         username='Admin',
@@ -35,35 +32,94 @@ def init_user(email: str, password: str):
         role=UserRole.ADMIN
     )
 
-    db.add(test_user)
-    db.commit()
-    logger.info('Done')
+    session = get_simple_session()
+    logger.info('从配置文件创建默认管理员账户...')
+    try:
+        insert_user(session, test_user)
+        logger.info('创建完毕。请注意，当存在手动注册的其他管理员账户后，此账号将被禁用。')
+    except UserExistError:
+        logger.error('此邮箱已存在')
+    finally:
+        session.close()
 
-    db.close()
+
+@validate_input(simple_char_valid, '知识库名称只能包含英文字母、数字和下划线')
+def _get_collection_name() -> str:
+    return input('\033[33m输入知识库名称（仅包含英文大小写、下划线和数字）: \033[0m')
+
+
+@validate_input(lambda x: len(x) > 0, '标题不能为空')
+def _get_collection_title() -> str:
+    return input('\033[33m输入知识库的显示标题： \033[0m')
+
+
+def init_knowledge_base(file_path: str):
+    # # 创建知识库相关数据表
+    # collection_name = _get_collection_name()
+    # collection_title = _get_collection_title()
+    # collection_desc = input('\033[33m输入知识库描述： \033[0m')
+    # now_time = datetime.now()
+    #
+    # knowledge_base = KnowledgeBaseTable(
+    #     table_name=collection_name,
+    #     table_title=collection_title,
+    #     description=collection_desc,
+    #     create_time=now_time,
+    #     last_update=now_time
+    # )
+    #
+    # session = get_simple_session()
+    # logger.info('创建知识库记录...')
+    # try:
+    #     insert_knowledge_base(session, knowledge_base)
+    # except KBExistError:
+    #     logger.error('已经存在同名的知识库')
+    #     exit(0)
+    # finally:
+    #     session.close()
+    #
+    # # 初始化向量数据库
+    # embedding_model = load_embedding()
+    # logger.info('初始化向量数据库...')
+    # vector_db = create_vector_db(
+    #     table_name=collection_name,
+    #     embedding_model=embedding_model,
+    #     db_name='llm_chat'
+    # )
+
+    if not os.path.exists(file_path):
+        exit(0)
+
+    markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')
+    print(markdown_list)
 
 
 def load_args(args: Namespace):
     setting = get_settings()
+    create_db_and_tables()
 
     if args.user:
-        logger.info('Create admin profile...')
         init_user(setting.server.INIT_USER, setting.server.INIT_PASSWORD)
+
+    if origin_path := args.knowledge_base:
+        init_knowledge_base(origin_path)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='database init')
     parser.add_argument(
         '--user',
-        '-U',
+        '-u',
         action='store_true',
-        help='Init default admin profile'
+        help='创建默认管理员账户'
     )
     parser.add_argument(
         '--knowledge_base',
-        '-K',
+        '-kb',
         nargs='?',
         const=-1,
-        type=int,
-        help='Initialize a specific collection, starting from 0.'
+        type=str,
+        default='',
+        help='创建知识库。若传入markdown文件所在路径，则会进行知识库文件的初始化'
     )
     load_args(parser.parse_args())

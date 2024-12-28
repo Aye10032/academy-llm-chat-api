@@ -1,4 +1,5 @@
 from langchain_openai import ChatOpenAI
+from loguru import logger
 
 from app.core.config import get_settings
 from llm.core.embedding_core import BgeM3Embeddings, BgeReranker
@@ -9,6 +10,7 @@ llm_cfg = get_settings().llm
 
 
 def load_embedding() -> BgeM3Embeddings:
+    logger.info(f'加载Embedding模型 {embd_cfg.MODEL}...')
     embedding = BgeM3Embeddings(
         bge_model_name=embd_cfg.MODEL,
         use_fp16=embd_cfg.FP16,
