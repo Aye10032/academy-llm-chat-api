@@ -10,11 +10,11 @@ class UserRole(IntEnum):
     ADMIN = 2
 
 
-class BaseUser(SQLModel):
+class User(SQLModel):
     username: str = Field(default="")
     email: EmailStr = Field(index=True, unique=True)
     role: UserRole = Field(default=UserRole.VISITOR)
 
 
-class UserPublic(BaseUser):
+class UserPublic(User):
     is_active: bool = Field(default=True)
