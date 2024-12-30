@@ -6,28 +6,45 @@ import yaml
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from pydantic import FilePath
+from pydantic_core import ValidationError
 
+from llm.file_loader.loader import BaseFileLoader
 from llm.schemas.markdown import MarkdownMeta, MARKDOWN
 
 
-def extract_title_list(md_text: str) -> str:
+class MarkdownLoader(BaseFileLoader):
+
+    def load(self):
+        pass
+
+    def save_md(self, md_path: FilePath):
+        pass
+
+
+def extract_title_list(md_docs: list[Document]) -> str:
     """将markdown文本的标题提取为列表文本
 
     Args:
-        md_text: markdown文本
+        md_docs: 分割结束的Markdown Document列表
 
     Returns:
         markdown列表格式的标题提取
     """
-    titles = re.findall(r'^(#+)\s*(.+)$', md_text, re.MULTILINE)
-    title_list = '\n'.join([
-        f'{"    " * (len(title[0]) - 1)}- {title[1]}'  # pylint: disable=inconsistent-quotes
-        for title in titles
-    ])
 
-    print(title_list)
+    titles = []
+    for doc in md_docs:
+        lines = doc.page_content.split('\n')
+        while lines and re.match(r'^(#+)\s*(.+)$', lines[0]):
+            titles.append(lines.pop(0))
 
-    return title_list
+    title_list = []
+    for heading in titles:
+        level = heading.count('#')
+        text = heading.replace('#', '').strip()
+        indent = '    ' * (level - 1)
+        title_list.append(f"{indent}- {text}")
+
+    return '\n'.join(title_list)
 
 
 def split_md_text(
@@ -52,8 +69,11 @@ def split_md_text(
             ('#', 'title'),
             ('##', 'section'),
             ('###', 'subtitle'),
-            ('####', 'subtitle')
-        ]
+            ('####', 'subtitle'),
+            ('#####', 'subtitle'),
+            ('######', 'subtitle'),
+        ],
+        strip_headers=False
     )
     r_splitter = RecursiveCharacterTextSplitter(
         separators=['\n'],
@@ -65,8 +85,14 @@ def split_md_text(
     if head_split_docs[0].page_content.startswith('---'):
         yaml_text = head_split_docs.pop(0).page_content.replace('---', '')
         data = yaml.load(yaml_text, Loader=yaml.FullLoader)
-        markdown_meta = MarkdownMeta(**data)
+        try:
+            markdown_meta = MarkdownMeta(**data)
+        except ValidationError:
+            markdown_meta = None
     else:
+        markdown_meta = None
+
+    if not markdown_meta:
         markdown_meta = MarkdownMeta(
             title=head_split_docs[0].metadata['title'],
             year=datetime.now().year,
@@ -96,13 +122,15 @@ def split_md_text(
 
     md_docs = r_splitter.split_documents(head_split_docs)
 
-    title_list = extract_title_list(md_text)
+    title_list = extract_title_list(md_docs)
     title_list_doc = Document(
         page_content=title_list,
         metadata=md_docs[-1].metadata
     )
-    # TODO: type name
-    title_list_doc.metadata.update({'type': ''})
+    title_list_doc.metadata.update({
+        'section': '',
+        'type': 'toc'
+    })
     md_docs.append(title_list_doc)
 
     return md_docs
@@ -115,9 +143,29 @@ def load_markdown(md_file: FilePath) -> list[Document]:
     return split_md_text(md_text)
 
 
+def load_markdown_external(md_file: FilePath):
+    with open(md_file, 'r', encoding='utf-8') as f:
+        md_text = f.read()
+
+    md_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=[
+            ('#', 'title'),
+            ('##', 'section'),
+            ('###', 'subtitle'),
+            ('####', 'subtitle'),
+            ('#####', 'subtitle'),
+            ('######', 'subtitle'),
+        ],
+        strip_headers=False
+    )
+
+
 def main() -> None:
-    docs = load_markdown('../../test/10.1002@advs.202207497.md')
+    docs = load_markdown('../../test/rag_mds/5.4 Agent中的提示词优化.md')
     print(docs)
+    # for doc in docs:
+    #     print('========================')
+    #     print(doc)
 
 
 if __name__ == '__main__':
