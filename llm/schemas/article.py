@@ -9,7 +9,7 @@ class ArticleBlock(BaseModel):
         text_level: 此段落的文本等级。0代表正文，1-6代表markdown格式下的1到6级标题
     """
     text: str
-    text_level: int
+    text_level: int = 0
 
     @field_validator('text_level')
     def validate_text_level(cls, value):
