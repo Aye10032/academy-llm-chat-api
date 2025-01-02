@@ -16,6 +16,11 @@ def get_knowledge_base(session: SessionDep, table_name: str) -> KnowledgeBaseTab
     return session.exec(statement).first()
 
 
+def get_knowledge_bases(session: SessionDep, offset: int, limit: int) -> list[KnowledgeBaseTable]:
+    statement = select(KnowledgeBaseTable).offset(offset).limit(limit)
+    return session.exec(statement).all()
+
+
 def insert_knowledge_base(session: SessionDep, knowledge_base: KnowledgeBaseTable):
     try:
         logger.debug(f'新增用户请求 ({KnowledgeBase.model_validate(knowledge_base)})')
