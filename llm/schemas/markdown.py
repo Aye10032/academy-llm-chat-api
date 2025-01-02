@@ -1,10 +1,13 @@
+from enum import IntEnum
+
 from pydantic import BaseModel
 
-MARKDOWN = 0
-PDF = 1
-WEB = 2
-WORD = 3
-POWERPOINT = 4
+class SourceType(IntEnum):
+    MARKDOWN = 0
+    PDF = 1
+    WEB = 2
+    WORD = 3
+    POWERPOINT = 4
 
 
 class MarkdownMeta(BaseModel):
@@ -12,4 +15,4 @@ class MarkdownMeta(BaseModel):
     author: str = ''
     year: int
     source: str = ''
-    source_type: int = MARKDOWN
+    source_type: int = 0

@@ -10,7 +10,7 @@ from pydantic_core import ValidationError
 
 from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import ArticleBlock
-from llm.schemas.markdown import MarkdownMeta, MARKDOWN
+from llm.schemas.markdown import MarkdownMeta, SourceType
 
 
 class MarkdownLoader(BaseFileLoader):
@@ -73,7 +73,7 @@ class MarkdownLoader(BaseFileLoader):
             self.file_meta = MarkdownMeta(
                 title=head_split_docs[0].metadata['title'],
                 year=datetime.now().year,
-                source_type=MARKDOWN
+                source_type=SourceType.MARKDOWN
             )
 
         # 存储为统一文档块，并提取标题
