@@ -50,7 +50,7 @@ def create_vector_db(
     schema.add_field('section_5', DataType.VARCHAR, max_length=65535, default_value='')
     schema.add_field('section_6', DataType.VARCHAR, max_length=65535, default_value='')
     schema.add_field('author', DataType.VARCHAR, max_length=65535)
-    schema.add_field('year', DataType.INT8)
+    schema.add_field('year', DataType.INT64)
     schema.add_field('type', DataType.VARCHAR, max_length=65535)
     schema.add_field('source', DataType.VARCHAR, max_length=65535)
     schema.add_field('source_type', DataType.INT8)
