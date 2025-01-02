@@ -6,6 +6,7 @@ from argparse import Namespace
 from datetime import datetime
 
 from loguru import logger
+from tqdm import tqdm
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
@@ -16,7 +17,9 @@ from app.models import UserTable, KnowledgeBaseTable
 from app.schemas.user import UserRole
 from app.utils.validator import validate_input, simple_char_valid
 from llm.core.model_core import load_embedding
-from llm.rag.retriever import create_vector_db
+from llm.file_loader import MarkdownLoader
+from llm.rag.retriever import create_vector_db, get_doc_db, insert_chain
+from llm.schemas.markdown import SourceType
 
 logger.remove()
 handler_id = logger.add(sys.stderr, level='DEBUG')
@@ -53,45 +56,66 @@ def _get_collection_title() -> str:
     return input('\033[33m输入知识库的显示标题： \033[0m')
 
 
-def init_knowledge_base(file_path: str):
-    # # 创建知识库相关数据表
-    # collection_name = _get_collection_name()
-    # collection_title = _get_collection_title()
-    # collection_desc = input('\033[33m输入知识库描述： \033[0m')
-    # now_time = datetime.now()
-    #
-    # knowledge_base = KnowledgeBaseTable(
-    #     table_name=collection_name,
-    #     table_title=collection_title,
-    #     description=collection_desc,
-    #     create_time=now_time,
-    #     last_update=now_time
-    # )
-    #
-    # session = get_simple_session()
-    # logger.info('创建知识库记录...')
-    # try:
-    #     insert_knowledge_base(session, knowledge_base)
-    # except KBExistError:
-    #     logger.error('已经存在同名的知识库')
-    #     exit(0)
-    # finally:
-    #     session.close()
-    #
-    # # 初始化向量数据库
-    # embedding_model = load_embedding()
-    # logger.info('初始化向量数据库...')
-    # vector_db = create_vector_db(
-    #     table_name=collection_name,
-    #     embedding_model=embedding_model,
-    #     db_name='llm_chat'
-    # )
+@validate_input(lambda x: x in ['en', 'zh'], '只能是en或zh')
+def _get_collection_lang() -> str:
+    return input('\033[33m输入知识库文件的语言： \033[0m')
+
+
+def init_knowledge_base(file_path: str, output_path: str):
+    # 创建知识库相关数据表
+    collection_name = _get_collection_name()
+    collection_title = _get_collection_title()
+    collection_desc = input('\033[33m输入知识库描述： \033[0m')
+    collection_lang = _get_collection_lang()
+    now_time = datetime.now()
+
+    knowledge_base = KnowledgeBaseTable(
+        table_name=collection_name,
+        table_title=collection_title,
+        description=collection_desc,
+        create_time=now_time,
+        last_update=now_time
+    )
+
+    session = get_simple_session()
+    logger.info('创建知识库记录...')
+    try:
+        insert_knowledge_base(session, knowledge_base)
+    except KBExistError:
+        logger.error('已经存在同名的知识库')
+        exit(0)
+    finally:
+        session.close()
+
+    # 初始化向量数据库
+    embedding_model = load_embedding()
+
+    logger.info('初始化向量数据库...')
+    vector_db = create_vector_db(
+        table_name=collection_name,
+        embedding_model=embedding_model,
+        db_name='llm_chat'
+    )
 
     if not os.path.exists(file_path):
         exit(0)
 
-    markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')
-    print(markdown_list)
+    markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')  # pylint: disable=inconsistent-quotes
+    md_loader = MarkdownLoader(keep_title=False)
+    doc_db = get_doc_db(collection_name)
+    retriever = insert_chain(vector_db, doc_db, collection_lang)
+    logger.info('建立文档索引')
+    for md_file_path in tqdm(markdown_list, total=len(markdown_list)):
+        meta, docs = md_loader.load(md_file_path)
+
+        if meta.source_type != SourceType.MARKDOWN:
+            # TODO 复制源文件
+            pass
+
+        md_path = os.path.join(output_path, collection_name, 'markdown')
+        os.makedirs(md_path, exist_ok=True)
+        md_loader.save_md(os.path.join(md_path, os.path.basename(md_file_path)))
+        retriever.add_documents(docs)
 
 
 def load_args(args: Namespace):
@@ -102,7 +126,7 @@ def load_args(args: Namespace):
         init_user(setting.server.INIT_USER, setting.server.INIT_PASSWORD)
 
     if origin_path := args.knowledge_base:
-        init_knowledge_base(origin_path)
+        init_knowledge_base(origin_path, setting.retriever.knowledge_base.STORE_PATH)
 
 
 if __name__ == '__main__':
