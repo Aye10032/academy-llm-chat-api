@@ -4,35 +4,65 @@ from typing import Optional
 
 import yaml
 from langchain_core.documents import Document
-from pydantic import FilePath
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import FilePath, BaseModel, Field
 
 from llm.schemas import ArticleBlock, MarkdownMeta
 
+SYS_PROMPT = """你是一个专业的文本摘要生成器。你的任务是根据用户提供的文章，生成简洁、准确、信息量丰富的摘要。摘要应：
+1.  抓住文章的核心思想和关键信息。
+2.  避免复制原文中的长句，尽量使用自己的语言进行概括。
+3.  长度应控制在原文的 20%-30% 左右。
+4.  如果原文包含多个主题，应在摘要中有所体现。
+5.  使用清晰简洁的语言，避免使用过于专业的术语。"""
 
-class BaseFileLoader(ABC):
+PROMPT = """请为以下文章生成一段摘要：
+{article}"""
+
+
+class BaseFileLoader(BaseModel, ABC):
     """文件夹加载器的基类
 
     对于所有类型的文件，以此类为基础，
     实现加载和保存为markdown格式这两个基础功能
 
     Attributes:
-        article:
-        file_meta:
+        article: 统一格式文档块列表
+        file_meta: 文档的meta信息
+
+        keep_title: 是否在分块文档中保留标题
+        add_toc: 是否返回全文目录信息
+
+        abstract_key: 摘要章节检测关键字
+        generate_abstract: 当文档不存在摘要章节时，通过大模型生成摘要
+        llm: 若generate_abstract为true，则必须传入一个可用的大模型，用于生成总结
     """
-    article: list[ArticleBlock]
+    article: list[ArticleBlock] = Field(default_factory=list)
     file_meta: Optional[MarkdownMeta] = None
+
     keep_title: bool = True
+    add_toc: bool = True
+
+    # 默认会使用文档的section（也就是二级标题）进行检测，若改标题含有摘要关键字，则会将这一段标记为摘要。
+    # 默认的摘要关键字是abstract，可以进行修改。
+    # 若不存在关键字，则不会标记摘要段落。这会使得此文本无法被摘要搜索索引。
+    # 为了解决这个问题，可以将generate_abstract设为真，此时会使用大模型对全文进行总结，生成一段摘要文本。
+    # 例：
+    # llm = load_glm4_flash()
+    # md_loader = MarkdownLoader(generate_abstract=True, llm=llm)
+    # meta, docs = md_loader.load('test.md')
+    abstract_key: str = 'abstract'
+    generate_abstract: bool = False
+    llm: Optional[BaseChatModel] = None
+    sys_prompt: str = SYS_PROMPT
+    prompt: str = PROMPT
 
     @abstractmethod
-    def load(self, origin_file_path: FilePath) -> tuple[Optional[MarkdownMeta], list[Document]]:
-        """
-
-        Args:
-            origin_file_path: 待加载的源文件路径
-
-        Returns:
-
-        """
+    def load(
+            self, origin_file_path: FilePath, **kwargs
+    ) -> tuple[Optional[MarkdownMeta], list[Document]]:
         raise NotImplementedError
 
     def save_md(self, md_path: FilePath) -> None:
@@ -45,22 +75,43 @@ class BaseFileLoader(ABC):
         """
         with open(md_path, 'w', encoding='utf-8') as f:
             if self.file_meta:
-                meta_stream = StringIO()
-                meta_str = self.__meta_to_stream(meta_stream)
-                meta_stream.close()
+                meta_str = self.__meta_to_str()
                 f.write(meta_str)
 
-            for block in self.article:
-                if 1 <= block.text_level <= 6:
-                    # 标题行
-                    f.write(f'{"#" * block.text_level} {block.text}  \n')  # pylint: disable=inconsistent-quotes
-                else:
-                    # 正文行
-                    f.write(f'{block.text}  \n')
+            f.write(self.__article_to_str())
 
-    def __meta_to_stream(self, stream: StringIO) -> str:
+        self.file_meta = None
+        self.article = []
+
+    def __meta_to_str(self) -> str:
+        stream = StringIO()
         stream.write('---\t\n')
         yaml.dump(self.file_meta.model_dump(), stream, sort_keys=False, width=900)
         stream.write('---\t\n')
 
-        return stream.getvalue()
+        text = stream.getvalue()
+        stream.close()
+        return text
+
+    def __article_to_str(self) -> str:
+        return '  \n'.join([
+            block.text
+            if block.text_level == 0
+            else f'{"#" * block.text_level} {block.text}'  # pylint: disable=inconsistent-quotes
+            for block in self.article
+        ])
+
+    def _conclude_article(self) -> str:
+        assert self.llm is not None
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                SystemMessage(content=self.sys_prompt),
+                ('human', self.prompt),
+            ]
+        )
+        chain = prompt | self.llm
+
+        result = chain.invoke({'article': self.__article_to_str()})
+
+        return result.content
