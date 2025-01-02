@@ -1,172 +1,154 @@
 import re
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional
 
 import yaml
 from langchain_core.documents import Document
-from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter, MarkdownTextSplitter
 from pydantic import FilePath
 from pydantic_core import ValidationError
 
 from llm.file_loader.loader import BaseFileLoader
+from llm.schemas import ArticleBlock
 from llm.schemas.markdown import MarkdownMeta, MARKDOWN
 
 
 class MarkdownLoader(BaseFileLoader):
+    """对于markdown格式文件的加载器
 
-    def load(self):
-        pass
+    Examples:
+        ```python
 
-    def save_md(self, md_path: FilePath):
-        pass
-
-
-def extract_title_list(md_docs: list[Document]) -> str:
-    """将markdown文本的标题提取为列表文本
-
-    Args:
-        md_docs: 分割结束的Markdown Document列表
-
-    Returns:
-        markdown列表格式的标题提取
+        md_loader = MarkdownLoader(keep_title=True, add_toc=True)
+        meta, docs = md_loader.load('test.md')
+        ```
     """
 
-    titles = []
-    for doc in md_docs:
-        lines = doc.page_content.split('\n')
-        while lines and re.match(r'^(#+)\s*(.+)$', lines[0]):
-            titles.append(lines.pop(0))
+    def load(
+            self,
+            origin_file_path: FilePath,
+            **kwargs
+    ) -> tuple[Optional[MarkdownMeta], list[Document]]:
+        """从markdown文件加载文档
 
-    title_list = []
-    for heading in titles:
-        level = heading.count('#')
-        text = heading.replace('#', '').strip()
-        indent = '    ' * (level - 1)
-        title_list.append(f"{indent}- {text}")
+        Args:
+            origin_file_path: 原始markdown文件
 
-    return '\n'.join(title_list)
+            **kwargs:
+                additional_metadata: 若有额外需要添加进文档的meta字段，通过此参数以字典形式传入
 
+        Returns:
+            一个元组，第一个元素为文档的meta信息，第二个为langchain格式的Document对象列表
+        """
+        assert origin_file_path.lower().endswith('.md')
 
-def split_md_text(
-        md_text: str,
-        *,
-        additional_metadata: Optional[dict[str, Any]] = None
-) -> list[Document]:
-    """对markdown格式的文本进行分块
+        with open(origin_file_path, 'r', encoding='utf-8') as f:
+            md_text = f.read()
 
-    对于markdown文件，采用yaml头部存储meta信息。
-    同时，会将markdown的标题进行提取并作为一个列表添加进文档列表中。
-
-    Args:
-        md_text: 原始的markdown文本
-        additional_metadata: 额外添加到文档的meta信息
-
-    Returns:
-        分块后的Langchain Document列表
-    """
-    md_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=[
-            ('#', 'title'),
-            ('##', 'section'),
-            ('###', 'subtitle'),
-            ('####', 'subtitle'),
-            ('#####', 'subtitle'),
-            ('######', 'subtitle'),
-        ],
-        strip_headers=False
-    )
-    r_splitter = RecursiveCharacterTextSplitter(
-        separators=['\n'],
-        keep_separator=False
-    )
-
-    head_split_docs = md_splitter.split_text(md_text)
-
-    if head_split_docs[0].page_content.startswith('---'):
-        yaml_text = head_split_docs.pop(0).page_content.replace('---', '')
-        data = yaml.load(yaml_text, Loader=yaml.FullLoader)
-        try:
-            markdown_meta = MarkdownMeta(**data)
-        except ValidationError:
-            markdown_meta = None
-    else:
-        markdown_meta = None
-
-    if not markdown_meta:
-        markdown_meta = MarkdownMeta(
-            title=head_split_docs[0].metadata['title'],
-            year=datetime.now().year,
-            source_type=MARKDOWN
+        # 章节分割
+        md_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=[
+                ('#', 'title'),
+                ('##', 'section'),
+                ('###', 'section_3'),
+                ('####', 'section_4'),
+                ('#####', 'section_5'),
+                ('######', 'section_6'),
+            ],
+            strip_headers=False
         )
 
-    for doc in head_split_docs:
-        if 'abstract' in doc.metadata['section'].lower():
-            doc.metadata.update({
-                'author': markdown_meta.author,
-                'year': markdown_meta.year,
-                'type': 'abstract',
-                'source': markdown_meta.source,
-                'source_type': markdown_meta.source_type
-            })
-        else:
-            doc.metadata.update({
-                'author': markdown_meta.author,
-                'year': markdown_meta.year,
-                'type': 'content',
-                'source': markdown_meta.source,
-                'source_type': markdown_meta.source_type
-            })
+        head_split_docs = md_splitter.split_text(md_text)
 
-        if additional_metadata:
-            doc.metadata.update(additional_metadata)
+        # 加载meta信息
+        if head_split_docs[0].page_content.startswith('---'):
+            yaml_text = head_split_docs.pop(0).page_content.replace('---', '')
+            data = yaml.load(yaml_text, Loader=yaml.FullLoader)
+            try:
+                self.file_meta = MarkdownMeta(**data)
+            except ValidationError:
+                pass
 
-    md_docs = r_splitter.split_documents(head_split_docs)
+        if not self.file_meta:
+            self.file_meta = MarkdownMeta(
+                title=head_split_docs[0].metadata['title'],
+                year=datetime.now().year,
+                source_type=MARKDOWN
+            )
 
-    title_list = extract_title_list(md_docs)
-    title_list_doc = Document(
-        page_content=title_list,
-        metadata=md_docs[-1].metadata
-    )
-    title_list_doc.metadata.update({
-        'section': '',
-        'type': 'toc'
-    })
-    md_docs.append(title_list_doc)
+        # 存储为统一文档块，并提取标题
+        title_list = []
+        has_abstract = False
+        for doc in head_split_docs:
+            lines = doc.page_content.split('\n')
+            while lines and re.match(r'^(#+)\s*(.+)$', lines[0]):
+                heading = lines.pop(0)
+                level = heading.count('#')
+                text = heading.replace('#', '').strip()
 
-    return md_docs
+                self.article.append(ArticleBlock(text=text, text_level=level))
+                title_list.append(f'{"    " * (level - 1)}- {text}')  # pylint: disable=inconsistent-quotes
 
+            self.article.append(ArticleBlock(text='\n'.join(lines)))
 
-def load_markdown(md_file: FilePath) -> list[Document]:
-    with open(md_file, 'r', encoding='utf-8') as f:
-        md_text = f.read()
+            if not self.keep_title:
+                doc.page_content = '\n'.join(lines)
 
-    return split_md_text(md_text)
+            if self.abstract_key in doc.metadata['section'].lower():
+                doc.metadata.update({
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'abstract',
+                    'source': self.file_meta.source,
+                    'source_type': self.file_meta.source_type
+                })
+                has_abstract = True
+            else:
+                doc.metadata.update({
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'content',
+                    'source': self.file_meta.source,
+                    'source_type': self.file_meta.source_type
+                })
 
+            if 'additional_metadata' in kwargs:
+                doc.metadata.update(kwargs.get('additional_metadata'))
 
-def load_markdown_external(md_file: FilePath):
-    with open(md_file, 'r', encoding='utf-8') as f:
-        md_text = f.read()
+        # 进一步分割
+        r_splitter = MarkdownTextSplitter(keep_separator=True)
+        md_docs = r_splitter.split_documents(head_split_docs)
 
-    md_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=[
-            ('#', 'title'),
-            ('##', 'section'),
-            ('###', 'subtitle'),
-            ('####', 'subtitle'),
-            ('#####', 'subtitle'),
-            ('######', 'subtitle'),
-        ],
-        strip_headers=False
-    )
+        # 添加目录文档块
+        if self.add_toc:
+            title_list_doc = Document(
+                page_content='\n'.join(title_list),
+                metadata={
+                    'title': self.file_meta.title,
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'toc',
+                    'source': self.file_meta.source,
+                    'source_type': self.file_meta.source_type
+                }
+            )
+            if 'additional_metadata' in kwargs:
+                title_list_doc.metadata.update(kwargs.get('additional_metadata'))
+            md_docs.append(title_list_doc)
 
+        if not has_abstract and self.generate_abstract:
+            abstract = self._conclude_article()
+            abstract_doc = Document(
+                page_content=abstract,
+                metadata={
+                    'title': self.file_meta.title,
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'abstract',
+                    'source': self.file_meta.source,
+                    'source_type': self.file_meta.source_type
+                }
+            )
+            md_docs.append(abstract_doc)
 
-def main() -> None:
-    docs = load_markdown('../../test/rag_mds/5.4 Agent中的提示词优化.md')
-    print(docs)
-    # for doc in docs:
-    #     print('========================')
-    #     print(doc)
-
-
-if __name__ == '__main__':
-    main()
+        return self.file_meta, md_docs
