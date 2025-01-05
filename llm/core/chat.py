@@ -3,7 +3,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableWithMessageHistory
 
-from llm.core.model_core import load_gpt4o_mini
+from llm.core.model import load_gpt4o_mini
 
 
 def chat_with_history(_chat_history: BaseChatMessageHistory, question: str):

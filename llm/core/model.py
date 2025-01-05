@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from loguru import logger
 
 from app.core.config import get_settings
-from llm.core.embedding_core import BgeM3Embeddings, BgeReranker
+from llm.core.embedding import BgeM3Embeddings, BgeReranker
 
 embd_cfg = get_settings().retriever.embedding
 reranker_cfg = get_settings().retriever.reranker

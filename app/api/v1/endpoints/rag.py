@@ -14,7 +14,7 @@ from app.db.session import SessionDep
 from app.models import UserTable, ChatSessionTable
 from app.schemas.chat_session import ChatSession
 from app.schemas.knowledge_base import KnowledgeBase
-from llm.core.model_core import load_glm4_flash
+from llm.core.model import load_glm4_flash
 
 
 class ChatRequest(BaseModel):

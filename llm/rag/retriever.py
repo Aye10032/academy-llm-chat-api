@@ -19,8 +19,8 @@ from pymilvus import DataType, MilvusClient
 from pymilvus.orm.types import infer_dtype_bydata
 
 from app.core.config import get_settings
-from llm.core.embedding_core import BgeReranker
-from llm.core.model_core import load_gpt4o_mini
+from llm.core.embedding import BgeReranker
+from llm.core.model import load_gpt4o_mini
 from llm.core.template import MULTIQUERY_SYSTEM_EN, MULTIQUERY_HUMAN_EN
 from llm.rag.storage import SqliteDocStore
 

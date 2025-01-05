@@ -16,7 +16,7 @@ from app.db.session import get_simple_session, create_db_and_tables
 from app.models import UserTable, KnowledgeBaseTable
 from app.schemas.user import UserRole
 from app.utils.validator import validate_input, simple_char_valid
-from llm.core.model_core import load_embedding
+from llm.core.model import load_embedding
 from llm.file_loader import MarkdownLoader
 from llm.rag.retriever import create_vector_db, get_doc_db, insert_chain
 from llm.schemas.markdown import SourceType
