@@ -26,6 +26,7 @@ def load_embedding() -> BgeM3Embeddings:
 
 
 def load_reranker() -> BgeReranker:
+    logger.info(f'加载Rerank模型 {reranker_cfg.MODEL}...')
     reranker = BgeReranker(
         bge_model_name=reranker_cfg.MODEL,
         use_fp16=reranker_cfg.FP16,
