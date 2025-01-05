@@ -18,7 +18,8 @@ from app.schemas.user import UserRole
 from app.utils.validator import validate_input, simple_char_valid
 from llm.core.model import load_embedding
 from llm.file_loader import MarkdownLoader
-from llm.rag.retriever import create_vector_db, get_doc_db, insert_chain
+from llm.rag.retriever import insert_chain
+from llm.rag.storage import create_vector_db, get_doc_db
 from llm.schemas.markdown import SourceType
 
 logger.remove()
