@@ -22,6 +22,6 @@ def get_chat(session: SessionDep, chat_history: str) -> Optional[ChatSessionTabl
     return session.exec(statement).first()
 
 
-def insert_chat(session: SessionDep, chat_session: ChatSessionTable):
+def insert_chat(session: SessionDep, chat_session: ChatSessionTable) -> None:
     session.add(chat_session)
     session.commit()
