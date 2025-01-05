@@ -44,7 +44,7 @@ def load_gpt4o() -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
         llm = ChatOpenAI(
             model_name='gpt-4o',
-            openai_proxy=get_settings().PROXY,
+            openai_proxy=get_settings().server.network.PROXY,
             temperature=0.4,
             openai_api_key=llm_cfg.openai.API_KEY
         )
@@ -61,7 +61,7 @@ def load_gpt4o_mini() -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
         llm = ChatOpenAI(
             model_name='gpt-4o-mini',
-            openai_proxy=get_settings().PROXY,
+            openai_proxy=get_settings().server.network.PROXY,
             temperature=0.4,
             openai_api_key=llm_cfg.openai.API_KEY
         )
