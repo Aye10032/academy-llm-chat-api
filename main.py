@@ -5,13 +5,13 @@ from fastapi import FastAPI
 from loguru import logger
 
 from app.core.config import get_settings
-from app.api.v1.endpoints import auth, chat, rag
+from app.api.v1.endpoints import auth, rag, user
 from app.db.session import create_db_and_tables
 from app.utils.logger import init_logging
 
 
 @asynccontextmanager
-async def lifespan(main_app: FastAPI): # pylint: disable=unused-argument
+async def lifespan(main_app: FastAPI):  # pylint: disable=unused-argument
     create_db_and_tables()
     yield
 
@@ -25,7 +25,7 @@ app = FastAPI(
 )
 
 app.include_router(auth.router, prefix='/api/v1/auth', tags=['auth'])
-app.include_router(chat.router, prefix='/api/v1/chat', tags=['chat'])
+app.include_router(user.router, prefix='/api/v1/user', tags=['user'])
 app.include_router(rag.router, prefix='/api/v1/rag', tags=['rag'])
 
 
@@ -36,7 +36,6 @@ def main() -> None:
         port=get_settings().server.network.SERVICE_HOST_PORT,
         access_log=True,
         workers=1,
-        # reload=True
     )
     server = uvicorn.Server(config)
     init_logging()
