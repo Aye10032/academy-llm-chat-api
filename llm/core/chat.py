@@ -1,12 +1,12 @@
 from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.documents import Document
+from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnableWithMessageHistory
 
 from llm.core.model import load_gpt4o_mini
 
 
-def chat_with_history(_chat_history: BaseChatMessageHistory, question: str):
+def simple_chat(question: str, *, chat_history: list[BaseMessage]):
     prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -20,17 +20,32 @@ def chat_with_history(_chat_history: BaseChatMessageHistory, question: str):
     llm = load_gpt4o_mini()
     chain = prompt | llm
 
-    chain_with_message_history = RunnableWithMessageHistory(
-        chain,
-        lambda session_id: _chat_history,
-        input_messages_key='input',
-        history_messages_key='chat_history',
-    )
+    result = chain.invoke({
+        'chat_history': chat_history,
+        'input': question
+    })
 
-    result = chain_with_message_history.stream(
-        {'input': question},
-        {'configurable': {'session_id': 'unused'}},
+    return result
+
+
+def rag_chat(question: str, docs: list[Document], *, chat_history: list[BaseMessage]):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                'system',
+                'You are a helpful assistant. Answer all questions to the best of your ability.',
+            ),
+            MessagesPlaceholder(variable_name='chat_history'),
+            ('human', '{input}'),
+        ]
     )
+    llm = load_gpt4o_mini()
+    chain = prompt | llm
+
+    result = chain.invoke({
+        'chat_history': chat_history,
+        'input': question
+    })
 
     return result
 
