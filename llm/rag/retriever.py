@@ -187,3 +187,27 @@ def base_retriever(
     )
 
     return retriever
+
+
+def format_docs(docs: list[Document], language: Literal['en', 'zh'] = 'en') -> str:
+    if language == 'zh':
+        formatted = [(
+            f"文献 ID: {i + 1}\n"
+            f"文献标题: {doc.metadata['title']}\n"
+            f"文献作者: {doc.metadata['author']}\n"
+            f"发表年份: {doc.metadata['year']}\n"
+            f"文献片段内容: {doc.page_content}\n"
+        )
+            for i, doc in enumerate(docs)
+        ]
+    else:
+        formatted = [(
+            f"Fragment ID: {i + 1}\n"
+            f"Fragment Title: {doc.metadata['title']}\n"
+            f"Fragment Author: {doc.metadata['author']}\n"
+            f"Fragment year: {doc.metadata['year']}\n"
+            f"Fragment Snippet: {doc.page_content}\n"
+        )
+            for i, doc in enumerate(docs)
+        ]
+    return "\n\n" + "\n\n----------------------------\n\n".join(formatted)

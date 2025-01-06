@@ -1,9 +1,15 @@
+from operator import itemgetter
+from typing import Optional
+
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 
 from llm.core.model import load_gpt4o_mini
+from llm.core.template import RAG_SYSTEM_EN, RAG_HUMAN_EN
+from llm.rag.retriever import format_docs
 
 
 def simple_chat(question: str, *, chat_history: list[BaseMessage]):
@@ -28,23 +34,34 @@ def simple_chat(question: str, *, chat_history: list[BaseMessage]):
     return result
 
 
-def rag_chat(question: str, docs: list[Document], *, chat_history: list[BaseMessage]):
+def rag_chat(
+        question: str,
+        docs: list[Document],
+        *,
+        chat_history: Optional[list[BaseMessage]] = None
+):
+    if chat_history is None:
+        chat_history = []
+
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                'system',
-                'You are a helpful assistant. Answer all questions to the best of your ability.',
-            ),
+            SystemMessage(content=RAG_SYSTEM_EN),
             MessagesPlaceholder(variable_name='chat_history'),
-            ('human', '{input}'),
+            ('human', RAG_HUMAN_EN),
         ]
     )
     llm = load_gpt4o_mini()
-    chain = prompt | llm
+    formatter = itemgetter("docs") | RunnableLambda(format_docs)
+    chain = {
+                'chat_history': itemgetter('chat_history'),
+                'documents': formatter,
+                'question': itemgetter('question')
+            } | prompt | llm
 
     result = chain.invoke({
         'chat_history': chat_history,
-        'input': question
+        'docs': docs,
+        'question': question
     })
 
     return result
