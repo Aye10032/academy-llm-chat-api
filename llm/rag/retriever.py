@@ -64,12 +64,14 @@ class ScoreRetriever(MultiVectorRetriever):
     def retrieve_documents(
             self, queries: list[str], run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
-        documents = [
-            self.vectorstore.max_marginal_relevance_search(query, **self.search_kwargs)
-            if self.search_type == SearchType.mmr
-            else self.vectorstore.similarity_search(query, **self.search_kwargs)
-            for query in queries
-        ]
+        documents = []
+        search_func = self.vectorstore.similarity_search \
+            if self.search_type == SearchType.similarity \
+            else self.vectorstore.max_marginal_relevance_search
+        logger.debug(queries)
+        for query in queries:
+            short_doc = search_func(query=query, **self.search_kwargs)
+            documents.extend(short_doc)
         return documents
 
     def _get_relevant_documents(
