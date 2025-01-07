@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from loguru import logger
 
 from app.core.config import get_settings
+from app.utils.cache import cache_model
 from llm.core.embedding import BgeM3Embeddings, BgeReranker
 
 embd_cfg = get_settings().retriever.embedding
@@ -9,6 +10,7 @@ reranker_cfg = get_settings().retriever.reranker
 llm_cfg = get_settings().llm
 
 
+@cache_model()
 def load_embedding() -> BgeM3Embeddings:
     logger.info(f'加载Embedding模型 {embd_cfg.MODEL}...')
     embedding = BgeM3Embeddings(
@@ -25,6 +27,7 @@ def load_embedding() -> BgeM3Embeddings:
     return embedding
 
 
+@cache_model()
 def load_reranker() -> BgeReranker:
     logger.info(f'加载Rerank模型 {reranker_cfg.MODEL}...')
     reranker = BgeReranker(
