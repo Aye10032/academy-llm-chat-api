@@ -23,12 +23,16 @@ MULTIQUERY_HUMAN_ZH = """用户问题：{question}
 请生成3个与原问题相关的新问题，每个问题独占一行，用换行符隔开。
 """
 
-RAG_SYSTEM_EN = """You are an AI assistant designed to perform Retrieval-Augmented Generation (RAG) tasks. Your goal is to answer user questions accurately and concisely based on the provided retrieved document. The generated answer must match the language of the question (e.g., respond in English if the question is in English). Use only the information from the document to answer the question. When citing specific information, indicate the source by adding a markdown citation like "([^ID])", where the ID corresponds to the "Fragment ID" provided in the document.
+RAG_SYSTEM_EN = """You are an AI assistant designed to perform Retrieval-Augmented Generation (RAG) tasks.
+Your goal is to answer user questions accurately and concisely based on the provided retrieved document.
+The generated answer must match the language of the question (e.g., respond in English if the question is in English).
+Use only the information from the document to answer the question.
+When citing specific information, include inline markdown citations directly after the referenced text, using the format "([^ID])", where the ID corresponds to the "Fragment ID" provided in the document.
 
 Guidelines:
 1. Focus on relevant parts of the document while answering the question.
 2. Avoid making assumptions or adding information not found in the document.
-3. Include markdown citation "([^ID])" whenever referencing specific information, using the ID from the document structure.
+3. Add inline citations directly after the information being referenced. For example: "The capital of France is Paris ([^1])."
 4. Match the language of the answer with the language of the question. If the question language is unclear, default to English.
 5. If the document does not contain sufficient information, respond with:
    - English: "The document does not contain enough information to answer this question."

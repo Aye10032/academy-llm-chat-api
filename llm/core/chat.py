@@ -5,7 +5,7 @@ from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from langchain_core.runnables import RunnableLambda, RunnableSerializable
 
 from llm.core.model import load_gpt4o_mini
 from llm.core.template import RAG_SYSTEM_EN, RAG_HUMAN_EN
@@ -39,7 +39,7 @@ def rag_chat(
         docs: list[Document],
         *,
         chat_history: Optional[list[BaseMessage]] = None
-):
+) -> RunnableSerializable:
     if chat_history is None:
         chat_history = []
 
@@ -58,13 +58,7 @@ def rag_chat(
                 'question': itemgetter('question')
             } | prompt | llm
 
-    result = chain.invoke({
-        'chat_history': chat_history,
-        'docs': docs,
-        'question': question
-    })
-
-    return result
+    return chain
 
 
 def conclude_chat(_chat_history: BaseChatMessageHistory):
