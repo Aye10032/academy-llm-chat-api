@@ -4,7 +4,7 @@ from sqlmodel import SQLModel
 
 
 class ChatSession(SQLModel):
-    chat_history: str
+    history_id: str
     knowledge_base_name: str
     user_email: str
     description: str = '新建对话'

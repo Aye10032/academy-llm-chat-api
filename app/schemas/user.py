@@ -15,7 +15,7 @@ class User(SQLModel):
     username: str = Field(default="")
     email: EmailStr = Field(index=True, unique=True)
     role: UserRole = Field(default=UserRole.VISITOR)
-    last_chat: str = Field(default="")
+    last_knowledge_base: str = Field(default="")
     last_project: str = Field(default="")
 
 
@@ -26,6 +26,6 @@ class UserPublic(User):
 class UserUpdate(SQLModel):
     username: Optional[str] = None
     role: Optional[UserRole] = None
-    last_chat: Optional[str] = None
+    last_knowledge_base: Optional[str] = None
     last_project: Optional[str] = None
     is_active: Optional[bool] = None

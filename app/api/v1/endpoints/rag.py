@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Any, Optional, Union
+from typing import Annotated, Union
 from uuid import uuid4
 from enum import Enum
 import json
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
 from app.core.security import get_current_active_user
-from app.crud.chat_session import insert_chat, get_chat_list
+from app.crud.chat_session import insert_chat, get_chat_list, get_chat
 from app.crud.knowledge_base import get_knowledge_bases
 from app.crud.user import update_user
 from app.db.session import SessionDep, engine
@@ -29,13 +29,13 @@ from llm.rag.storage import get_vector_db, get_doc_db
 class ChatRequest(BaseModel):
     message: str
     knowledge_base_name: str
-    history: str
+    history_id: str
 
 
 class ChatEventType(Enum):
-    STATUS = "status"
-    DOCS = "docs"
-    ANSWER = "answer"
+    STATUS = 'status'
+    DOCS = 'docs'
+    ANSWER = 'answer'
 
 
 class SSEMessage(BaseModel):
@@ -82,32 +82,41 @@ async def get_chats(
     return get_chat_list(session, str(current_user.email), knowledge_base_name)
 
 
-@router.patch('/{knowledge_base_name}', description='在对应知识库下新建对话')
+@router.patch('/chat/{knowledge_base_name}', description='在对应知识库下新建对话')
 async def add_new_chat(
         session: SessionDep,
         knowledge_base_name: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
+) -> str:
     now_time = datetime.now()
 
     new_chat = ChatSessionTable(
-        chat_history=str(uuid4()),
+        history_id=str(uuid4()),
         knowledge_base_name=knowledge_base_name,
         user_email=str(current_user.email),
         create_time=now_time,
         update_time=now_time
     )
     insert_chat(session, new_chat)
-    return new_chat.chat_history
+    return new_chat.history_id
 
 
-@router.get('/chat/{chat_history}')
+@router.get('/chat_info/{history_id}', response_model=ChatSession)
+async def get_chat_info(
+        session: SessionDep,
+        history_id: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return get_chat(session, str(current_user.email), history_id)
+
+
+@router.get('/chat/{history_id}')
 async def load_chat(
-        chat_history: str,
+        history_id: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
     chat_message_history = SQLChatMessageHistory(
-        session_id=chat_history,
+        session_id=history_id,
         connection=engine
     )
     return chat_message_history.messages
@@ -119,7 +128,7 @@ async def chat(
         request: ChatRequest,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    logger.debug(f'knowledge_base: {request.knowledge_base_name} session:{request.history}')
+    logger.debug(f'knowledge_base: {request.knowledge_base_name} session:{request.history_id}')
     logger.info(f'{current_user.username}: {request.message}')
 
     async def generate():
@@ -128,9 +137,9 @@ async def chat(
             event=ChatEventType.STATUS,
             data="正在加载模型..."
         ).to_sse()
-        
+
         await asyncio.sleep(0.1)  # 添加小延迟
-        
+
         embedding = load_embedding()
         reranker = load_reranker()
         vec_db = get_vector_db(request.knowledge_base_name, embedding, db_name='llm_chat')
@@ -141,7 +150,7 @@ async def chat(
             event=ChatEventType.STATUS,
             data="正在检索相关文档..."
         ).to_sse()
-        
+
         await asyncio.sleep(0.1)  # 添加小延迟
 
         retriever = base_retriever(vec_db, doc_db, reranker)
@@ -156,7 +165,7 @@ async def chat(
             event=ChatEventType.DOCS,
             data=docs_data
         ).to_sse()
-        
+
         await asyncio.sleep(0.1)  # 添加小延迟
 
         # 发送生成回答状态
@@ -167,7 +176,7 @@ async def chat(
 
         chain = rag_chat(request.message, docs)
         full_response = ''
-        
+
         async for chunk in chain.astream({
             'chat_history': [],
             'docs': docs,
@@ -179,14 +188,14 @@ async def chat(
                     event=ChatEventType.ANSWER,
                     data=chunk.content
                 ).to_sse()
-                
+
         logger.info(f'AI: {full_response}')
 
     # 更新用户信息
     update_user(
         session,
         str(current_user.email),
-        UserUpdate(last_chat=request.history, last_project=request.knowledge_base_name)
+        UserUpdate(last_knowledge_base=request.knowledge_base_name)
     )
 
     return StreamingResponse(

@@ -17,8 +17,10 @@ def get_chat_list(
     return session.exec(statement).all()
 
 
-def get_chat(session: SessionDep, chat_history: str) -> Optional[ChatSessionTable]:
-    statement = select(ChatSessionTable).where(ChatSessionTable.chat_history == chat_history)
+def get_chat(session: SessionDep, email: str, history_id: str) -> Optional[ChatSessionTable]:
+    statement = (select(ChatSessionTable)
+                 .where(ChatSessionTable.user_email == email)
+                 .where(ChatSessionTable.history_id == history_id))
     return session.exec(statement).first()
 
 
