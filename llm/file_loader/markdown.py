@@ -10,7 +10,7 @@ from pydantic_core import ValidationError
 
 from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import ArticleBlock
-from llm.schemas.markdown import MarkdownMeta, SourceType
+from llm.schemas.markdown import MarkdownMeta, SourceType, FileSource
 
 
 class MarkdownLoader(BaseFileLoader):
@@ -73,7 +73,9 @@ class MarkdownLoader(BaseFileLoader):
             self.file_meta = MarkdownMeta(
                 title=head_split_docs[0].metadata['title'],
                 year=datetime.now().year,
-                source_type=SourceType.MARKDOWN
+                source=[
+                    FileSource(source_url='', source_type=SourceType.MARKDOWN)
+                ]
             )
 
         # 存储为统一文档块，并提取标题
@@ -99,8 +101,7 @@ class MarkdownLoader(BaseFileLoader):
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'abstract',
-                    'source': self.file_meta.source,
-                    'source_type': self.file_meta.source_type
+                    'source': self.file_meta.model_dump()['source']
                 })
                 has_abstract = True
             else:
@@ -108,8 +109,7 @@ class MarkdownLoader(BaseFileLoader):
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'content',
-                    'source': self.file_meta.source,
-                    'source_type': self.file_meta.source_type
+                    'source': self.file_meta.model_dump()['source']
                 })
 
             if 'additional_metadata' in kwargs:
@@ -128,8 +128,7 @@ class MarkdownLoader(BaseFileLoader):
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'toc',
-                    'source': self.file_meta.source,
-                    'source_type': self.file_meta.source_type
+                    'source': self.file_meta.model_dump()['source']
                 }
             )
             if 'additional_metadata' in kwargs:
@@ -145,8 +144,7 @@ class MarkdownLoader(BaseFileLoader):
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'abstract',
-                    'source': self.file_meta.source,
-                    'source_type': self.file_meta.source_type
+                    'source': self.file_meta.model_dump()['source']
                 }
             )
             md_docs.append(abstract_doc)

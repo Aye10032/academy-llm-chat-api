@@ -2,6 +2,7 @@ from enum import IntEnum
 
 from pydantic import BaseModel
 
+
 class SourceType(IntEnum):
     MARKDOWN = 0
     PDF = 1
@@ -10,9 +11,13 @@ class SourceType(IntEnum):
     POWERPOINT = 4
 
 
+class FileSource(BaseModel):
+    source_url: str = ''
+    source_type: int = 0
+
+
 class MarkdownMeta(BaseModel):
     title: str = ''
     author: str = ''
     year: int
-    source: str = ''
-    source_type: int = 0
+    source: list[FileSource]

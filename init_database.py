@@ -109,9 +109,10 @@ def init_knowledge_base(file_path: str, output_path: str):
     for md_file_path in tqdm(markdown_list, total=len(markdown_list)):
         meta, docs = md_loader.load(md_file_path)
 
-        if meta.source_type != SourceType.MARKDOWN:
-            # TODO 复制源文件
-            pass
+        for source in meta.source:
+            if source.source_type == SourceType.PDF:
+                # TODO 复制源文件
+                pass
 
         md_path = os.path.join(output_path, collection_name, 'markdown')
         os.makedirs(md_path, exist_ok=True)
