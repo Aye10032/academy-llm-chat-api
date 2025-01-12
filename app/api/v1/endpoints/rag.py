@@ -131,6 +131,11 @@ async def chat(
     logger.debug(f'knowledge_base: {request.knowledge_base_name} session:{request.history_id}')
     logger.info(f'{current_user.username}: {request.message}')
 
+    chat_message_history = SQLChatMessageHistory(
+        session_id=request.history_id,
+        connection=engine
+    )
+
     async def generate():
         # 发送模型加载状态
         yield SSEMessage(
@@ -190,6 +195,8 @@ async def chat(
                 ).to_sse()
 
         logger.info(f'AI: {full_response}')
+        chat_message_history.add_user_message(request.message)
+        chat_message_history.add_ai_message(full_response)
 
     # 更新用户信息
     update_user(
