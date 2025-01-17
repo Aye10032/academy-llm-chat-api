@@ -23,3 +23,7 @@ transformers~=4.46.3
 # 其它
 loguru
 tqdm
+aiohttp~=3.11.8
+aiofiles~=24.1.0
+lxml
+bs4

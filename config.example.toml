@@ -9,6 +9,14 @@ service_host_ip = "127.0.0.1"
 service_host_port = 8000
 proxy = "http://127.0.0.1:7890"
 
+[fileloader.grobid]
+grobid_server = "http://localhost:8070"
+service = "processFulltextDocument"
+batch_size = 100
+sleep_time = 5
+timeout = 300
+coordinates = ["persName", "ref", "head", "s", "p", "title"]
+multi_process = 10
 
 [retriever.embedding]
 model = "BAAI/bge-m3"

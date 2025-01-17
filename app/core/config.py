@@ -33,6 +33,22 @@ class ServerSetting(BaseModel):
     network: ServerNetworkSetting
 
 
+class GrobidSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    GROBID_SERVER: str
+    SERVICE: Literal['processFulltextDocument']
+    BATCH_SIZE: int
+    SLEEP_TIME: int
+    TIMEOUT: int
+    COORDINATES: list[str] = Field(default_factory=list)
+    MULTI_PROCESS: int
+
+
+class FileLoaderSetting(BaseModel):
+    grobid: GrobidSetting
+
+
 class BaseModelSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
@@ -119,6 +135,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     server: ServerSetting
+    fileloader: FileLoaderSetting
     retriever: RetrieverSetting
     llm: LLMSetting
 

@@ -1,12 +1,14 @@
+import io
 from abc import ABC, abstractmethod
 from io import StringIO
-from typing import Optional
+from typing import Optional, Any
 
 import yaml
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 from pydantic import FilePath, BaseModel, Field
 
 from llm.schemas import ArticleBlock, MarkdownMeta
@@ -62,7 +64,7 @@ class BaseFileLoader(BaseModel, ABC):
     @abstractmethod
     def load(
             self, origin_file_path: FilePath, **kwargs
-    ) -> tuple[Optional[MarkdownMeta], list[Document]]:
+    ) -> tuple[MarkdownMeta, list[Document]]:
         raise NotImplementedError
 
     def save_md(self, md_path: FilePath) -> None:
@@ -115,3 +117,94 @@ class BaseFileLoader(BaseModel, ABC):
         result = chain.invoke({'article': self.__article_to_str()})
 
         return result.content
+
+    def _article_to_doc(self, *, additional_metadata: Optional[dict[str, Any]] = None) -> list[Document]:
+        md_stream = io.StringIO()
+        for section in self.article:
+            if section.text_level == 0:
+                md_stream.write(f'{section.text}\t\n')
+            else:
+                md_stream.write('#' * section.text_level)
+                md_stream.write(f' {section.text}\t\n')
+        md_text = md_stream.getvalue()
+        md_stream.close()
+
+        md_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=[
+                ('#', 'title'),
+                ('##', 'section'),
+                ('###', 'section_3'),
+                ('####', 'section_4'),
+                ('#####', 'section_5'),
+                ('######', 'section_6'),
+            ],
+            strip_headers=not self.keep_title
+        )
+        head_split_docs = md_splitter.split_text(md_text)
+
+        has_abstract = False
+        for doc in head_split_docs:
+            if self.abstract_key in doc.metadata['section'].lower():
+                doc.metadata.update({
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'abstract',
+                    'source': self.file_meta.model_dump()['source']
+                })
+                has_abstract = True
+            else:
+                doc.metadata.update({
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'content',
+                    'source': self.file_meta.model_dump()['source']
+                })
+
+            if additional_metadata:
+                doc.metadata.update(additional_metadata)
+
+        # 添加目录文档块
+        if self.add_toc:
+            title_list = []
+            for section in self.article:
+                level = section.text_level
+                text = section.text
+                if level == 0:
+                    continue
+
+                title_list.append(f'{"    " * (level - 1)}- {text}')  # pylint: disable=inconsistent-quotes
+            title_list_doc = Document(
+                page_content='\n'.join(title_list),
+                metadata={
+                    'title': self.file_meta.title,
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'toc',
+                    'source': self.file_meta.model_dump()['source']
+                }
+            )
+
+            if additional_metadata:
+                title_list_doc.metadata.update(additional_metadata)
+
+            head_split_docs.append(title_list_doc)
+
+        if not has_abstract and self.generate_abstract:
+            abstract = self._conclude_article()
+            abstract_doc = Document(
+                page_content=abstract,
+                metadata={
+                    'title': self.file_meta.title,
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'abstract',
+                    'source': self.file_meta.model_dump()['source']
+                }
+            )
+
+            if additional_metadata:
+                abstract_doc.metadata.update(additional_metadata)
+
+            head_split_docs.append(abstract_doc)
+
+        return head_split_docs
