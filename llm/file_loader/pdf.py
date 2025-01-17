@@ -1,14 +1,13 @@
 import random
 import re
 from enum import StrEnum
-from typing import Optional, Literal, Any
+from typing import Literal, Any
 
 import requests
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 from loguru import logger
-from pydantic import FilePath, GetCoreSchemaHandler
-from pydantic_core import core_schema, CoreSchema
+from pydantic import FilePath
 from requests import RequestException
 from urllib3.exceptions import ResponseError
 
@@ -257,7 +256,18 @@ class PdfLoader(BaseFileLoader):
 
     Examples:
         若使用Grobid，则先定义解析器，之后将之传入加载器：
+        ```python
 
+        gr_setting = get_settings().fileloader.grobid
+
+        with GrobidConnector(gr_setting) as connector:
+            loader = PdfLoader(keep_title=True, add_toc=True, solver='grobid', connector=connector)
+
+            pdf_list = glob.glob('test/*.pdf')
+            for file in tqdm(pdf_list, total=len(pdf_list)):
+                meta, docs = loader.load(file)
+                loader.save_md(f'test/md/{Path(file).name.replace(".pdf", ".md")}')
+        ```
     """
     solver: Literal['grobid', 'doc2x']
     connector: Any
