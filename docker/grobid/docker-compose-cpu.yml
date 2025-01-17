@@ -1,0 +1,13 @@
+name: grobid
+
+services:
+  grobid:
+    image: lfoppiano/grobid:0.8.1
+    ports:
+      - "8070:8070"
+    cpus: 0.000
+    restart: on-failure
+
+networks:
+  default:
+    name: grobid
