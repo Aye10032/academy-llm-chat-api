@@ -4,7 +4,7 @@ from typing import Optional
 
 import yaml
 from langchain_core.documents import Document
-from langchain_text_splitters import MarkdownHeaderTextSplitter, MarkdownTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 from pydantic import FilePath
 from pydantic_core import ValidationError
 
@@ -28,7 +28,7 @@ class MarkdownLoader(BaseFileLoader):
             self,
             origin_file_path: FilePath,
             **kwargs
-    ) -> tuple[Optional[MarkdownMeta], list[Document]]:
+    ) -> tuple[MarkdownMeta, list[Document]]:
         """从markdown文件加载文档
 
         Args:
@@ -115,10 +115,6 @@ class MarkdownLoader(BaseFileLoader):
             if 'additional_metadata' in kwargs:
                 doc.metadata.update(kwargs.get('additional_metadata'))
 
-        # 进一步分割
-        r_splitter = MarkdownTextSplitter(keep_separator=True)
-        md_docs = r_splitter.split_documents(head_split_docs)
-
         # 添加目录文档块
         if self.add_toc:
             title_list_doc = Document(
@@ -133,7 +129,7 @@ class MarkdownLoader(BaseFileLoader):
             )
             if 'additional_metadata' in kwargs:
                 title_list_doc.metadata.update(kwargs.get('additional_metadata'))
-            md_docs.append(title_list_doc)
+            head_split_docs.append(title_list_doc)
 
         if not has_abstract and self.generate_abstract:
             abstract = self._conclude_article()
@@ -147,6 +143,6 @@ class MarkdownLoader(BaseFileLoader):
                     'source': self.file_meta.model_dump()['source']
                 }
             )
-            md_docs.append(abstract_doc)
+            head_split_docs.append(abstract_doc)
 
-        return self.file_meta, md_docs
+        return self.file_meta, head_split_docs
