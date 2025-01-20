@@ -9,7 +9,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import MarkdownHeaderTextSplitter
-from pydantic import FilePath, BaseModel, Field
+from pydantic import FilePath, BaseModel, Field, AnyHttpUrl
 
 from llm.schemas import ArticleBlock, MarkdownMeta
 
@@ -67,7 +67,7 @@ class BaseFileLoader(BaseModel, ABC):
 
     @abstractmethod
     def load(
-            self, origin_file_path: FilePath, **kwargs
+            self, origin_file_path: FilePath | AnyHttpUrl, **kwargs
     ) -> tuple[MarkdownMeta, list[Document]]:
         raise NotImplementedError
 
