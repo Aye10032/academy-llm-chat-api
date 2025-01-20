@@ -130,7 +130,7 @@ def insert_chain(
         ParentDocumentRetriever
     """
     parent_splitter = RecursiveCharacterTextSplitter(
-        separators=['\n'],
+        separators=['\n\n', '\t\n'],
         keep_separator=False
     )
 
@@ -138,14 +138,14 @@ def insert_chain(
         child_splitter = RecursiveCharacterTextSplitter(
             chunk_size=200,
             chunk_overlap=0,
-            separators=['。', '\r\n', '\n'],
+            separators=['。', '. '],
             keep_separator=False
         )
     else:
         child_splitter = RecursiveCharacterTextSplitter(
             chunk_size=400,
             chunk_overlap=0,
-            separators=['. ', '\r\n', '\n'],
+            separators=['. '],
             keep_separator=False
         )
 
