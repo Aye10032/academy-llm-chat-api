@@ -4,7 +4,6 @@ from functools import wraps
 from typing import Any
 
 from loguru import logger
-from urllib3.exceptions import HTTPError
 
 
 def retry(retries: int = 3, delay: float = 1) -> Callable:
@@ -29,7 +28,7 @@ def retry(retries: int = 3, delay: float = 1) -> Callable:
             for i in range(1, retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except HTTPError as e:
+                except Exception as e:
                     if i == retries:
                         logger.error(f'Error: {repr(e)}.')
                         logger.error(f'"{func.__name__}()" failed after {retries} retries.')
