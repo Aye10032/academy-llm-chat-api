@@ -9,6 +9,8 @@ from langchain_core.documents import Document
 from loguru import logger
 from pydantic import FilePath
 from requests import RequestException
+from requests.adapters import HTTPAdapter
+from urllib3 import Retry
 from urllib3.exceptions import ResponseError
 
 from app.core.config import GrobidSetting
@@ -50,6 +52,11 @@ class GrobidConnector:
 
     def __enter__(self):
         self.session = requests.Session()
+
+        retries = Retry(total=5, backoff_factor=5, status_forcelist=[500, 502, 503, 504, 300])
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
         self.session.headers.update({
             'Accept': 'application/xml'
         })
@@ -69,7 +76,6 @@ class GrobidConnector:
             logger.error(f'[{e}]: Grobid server is unavailable.')
             raise ConnectionError('Grobid server is unavailable.') from e
 
-    @retry(delay=random.uniform(1.0, 5.0))
     def parse_file(
             self,
             pdf_file: str | bytes,

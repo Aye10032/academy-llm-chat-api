@@ -1,9 +1,11 @@
 import argparse
 import glob
 import os.path
+import shutil
 import sys
 from argparse import Namespace
 from datetime import datetime
+from pathlib import Path
 
 from loguru import logger
 from tqdm import tqdm
@@ -18,6 +20,8 @@ from app.schemas.user import UserRole
 from app.utils.validator import validate_input, simple_char_valid
 from llm.core.model import load_embedding
 from llm.file_loader import MarkdownLoader
+from llm.file_loader.loader import FileLoadError
+from llm.file_loader.pdf import PdfLoader, GrobidConnector
 from llm.rag.retriever import insert_chain
 from llm.rag.storage import create_vector_db, get_doc_db
 from llm.schemas.markdown import SourceType
@@ -62,12 +66,19 @@ def _get_collection_lang() -> str:
     return input('\033[33m输入知识库文件的语言： \033[0m')
 
 
+@validate_input(lambda x: x in ['md', 'pdf'], '只能是md、pdf中的一种')
+def _get_collection_ext() -> str:
+    user_input = input('\033[33m输入本次建库文件的类型（默认为md）： \033[0m')
+    return user_input if user_input else 'md'
+
+
 def init_knowledge_base(file_path: str, output_path: str):
     # 创建知识库相关数据表
     collection_name = _get_collection_name()
     collection_title = _get_collection_title()
     collection_desc = input('\033[33m输入知识库描述： \033[0m')
     collection_lang = _get_collection_lang()
+    collection_ext = _get_collection_ext()
     now_time = datetime.now()
 
     knowledge_base = KnowledgeBaseTable(
@@ -101,23 +112,44 @@ def init_knowledge_base(file_path: str, output_path: str):
     if not os.path.exists(file_path):
         exit(0)
 
-    markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')  # pylint: disable=inconsistent-quotes
-    md_loader = MarkdownLoader(keep_title=False)
     doc_db = get_doc_db(collection_name)
     retriever = insert_chain(vector_db, doc_db, collection_lang)
-    logger.info('建立文档索引')
-    for md_file_path in tqdm(markdown_list, total=len(markdown_list)):
-        meta, docs = md_loader.load(md_file_path)
 
-        for source in meta.source:
-            if source.source_type == SourceType.PDF:
-                # TODO 复制源文件
-                pass
-
+    if collection_ext == 'md':
+        markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')  # pylint: disable=inconsistent-quotes
         md_path = os.path.join(output_path, collection_name, 'markdown')
         os.makedirs(md_path, exist_ok=True)
-        md_loader.save_md(os.path.join(md_path, os.path.basename(md_file_path)))
-        retriever.add_documents(docs)
+
+        md_loader = MarkdownLoader(keep_title=False)
+        logger.info('建立文档索引')
+        for md_file_path in tqdm(markdown_list, total=len(markdown_list)):
+            _, docs = md_loader.load(md_file_path)
+
+            md_loader.save_md(os.path.join(md_path, os.path.basename(md_file_path)))
+            retriever.add_documents(docs)
+    elif collection_ext == 'pdf':
+        pdf_list = glob.glob(f'{file_path.rstrip("/")}/*.pdf')  # pylint: disable=inconsistent-quotes
+        pdf_path = os.path.join(output_path, collection_name, 'pdf')
+        md_path = os.path.join(output_path, collection_name, 'markdown')
+        os.makedirs(pdf_path, exist_ok=True)
+        os.makedirs(md_path, exist_ok=True)
+        gr_setting = get_settings().fileloader.grobid
+
+        with GrobidConnector(gr_setting) as connector:
+            loader = PdfLoader(keep_title=False, add_toc=True, solver='grobid', connector=connector)
+            logger.info('建立文档索引')
+            for file in tqdm(pdf_list, total=len(pdf_list)):
+                pdf_file = os.path.join(pdf_path, Path(file).name)
+                shutil.copyfile(file, pdf_file)
+
+                try:
+                    _, docs = loader.load(pdf_file)
+
+                    md_file = os.path.join(md_path, Path(file).name.replace('.pdf', '.md'))
+                    loader.save_md(md_file)
+                    retriever.add_documents(docs)
+                except FileLoadError:
+                    logger.error(f'文件{file}解析失败，请手动处理')
 
 
 def load_args(args: Namespace):
@@ -146,6 +178,6 @@ if __name__ == '__main__':
         const=-1,
         type=str,
         default='',
-        help='创建知识库。若传入markdown文件所在路径，则会进行知识库文件的初始化'
+        help='创建知识库。若传入待建库文件所在路径，则会进行知识库文件的初始化。目前仅支持一次性处理单一类型的文件'
     )
     load_args(parser.parse_args())

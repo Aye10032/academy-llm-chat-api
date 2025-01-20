@@ -24,6 +24,10 @@ PROMPT = """请为以下文章生成一段摘要：
 {article}"""
 
 
+class FileLoadError(Exception):
+    pass
+
+
 class BaseFileLoader(BaseModel, ABC):
     """文件夹加载器的基类
 
@@ -144,6 +148,9 @@ class BaseFileLoader(BaseModel, ABC):
 
         has_abstract = False
         for doc in head_split_docs:
+            if not 'section' in doc.metadata:
+                raise FileLoadError('文档格式解析错误')
+
             if self.abstract_key in doc.metadata['section'].lower():
                 doc.metadata.update({
                     'author': self.file_meta.author,
