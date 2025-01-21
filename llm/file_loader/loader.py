@@ -60,6 +60,7 @@ class BaseFileLoader(BaseModel, ABC):
     # md_loader = MarkdownLoader(generate_abstract=True, llm=llm)
     # meta, docs = md_loader.load('test.md')
     abstract_key: str = 'abstract'
+    abstract_level: str = 'section'
     generate_abstract: bool = False
     llm: Optional[BaseChatModel] = None
     sys_prompt: str = SYS_PROMPT
@@ -148,10 +149,8 @@ class BaseFileLoader(BaseModel, ABC):
 
         has_abstract = False
         for doc in head_split_docs:
-            if not 'section' in doc.metadata:
-                raise FileLoadError('文档格式解析错误')
-
-            if self.abstract_key in doc.metadata['section'].lower():
+            if (self.abstract_level in doc.metadata and
+                    self.abstract_key in doc.metadata[self.abstract_level].lower()):
                 doc.metadata.update({
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
@@ -184,6 +183,7 @@ class BaseFileLoader(BaseModel, ABC):
                 page_content='\n'.join(title_list),
                 metadata={
                     'title': self.file_meta.title,
+                    'section': 'toc',
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'toc',
@@ -202,6 +202,7 @@ class BaseFileLoader(BaseModel, ABC):
                 page_content=abstract,
                 metadata={
                     'title': self.file_meta.title,
+                    'section': self.abstract_key,
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'abstract',

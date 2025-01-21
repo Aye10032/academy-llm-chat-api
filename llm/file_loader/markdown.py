@@ -96,7 +96,8 @@ class MarkdownLoader(BaseFileLoader):
             if not self.keep_title:
                 doc.page_content = '\n'.join(lines)
 
-            if self.abstract_key in doc.metadata['section'].lower():
+            if (self.abstract_level in doc.metadata and
+                    self.abstract_key in doc.metadata[self.abstract_level].lower()):
                 doc.metadata.update({
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
@@ -121,6 +122,7 @@ class MarkdownLoader(BaseFileLoader):
                 page_content='\n'.join(title_list),
                 metadata={
                     'title': self.file_meta.title,
+                    'section': 'toc',
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'toc',
@@ -137,6 +139,7 @@ class MarkdownLoader(BaseFileLoader):
                 page_content=abstract,
                 metadata={
                     'title': self.file_meta.title,
+                    'section': self.abstract_key,
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'abstract',
