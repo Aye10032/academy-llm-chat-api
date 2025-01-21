@@ -205,15 +205,17 @@ def create_vector_db(
         embedding_model: Embeddings,
         *,
         db_name: str = 'default',
-        index_params: Optional[dict[str, Any]] = None
+        index_params: Optional[dict[str, Any]] = None,
+        drop_old: bool = False
 ) -> Milvus:
     """初始化Milvus数据库
 
     Args:
-        table_name (str): 数据表名称
-        embedding_model (Embeddings): 向量查询所使用的嵌入模型
-        db_name (str): 连接的数据库，默认为 'default'.
-        index_params (Optional[dict[str, Any]]): （可选参数）自定义索引算法参数
+        table_name: 数据表名称
+        embedding_model: 向量查询所使用的嵌入模型
+        db_name: 连接的数据库，默认为 'default'.
+        index_params: （可选参数）自定义索引算法参数
+        drop_old: 是否覆盖旧数据库
 
     Returns:
         Milvus: langchain格式的Milvus数据库对象
@@ -222,6 +224,10 @@ def create_vector_db(
     dim = len(vector_field_embeddings[0])
 
     client = MilvusClient(**retriever_cfg.knowledge_base.milvus.get_conn_args(db_name))
+
+    if drop_old:
+        client.drop_collection(table_name)
+        logger.info(f'删除了旧数据表 {table_name}')
 
     schema = MilvusClient.create_schema(
         auto_id=True,
@@ -277,10 +283,12 @@ def get_vector_db(
     Returns:
         Milvus: langchain格式的Milvus数据库对象
     """
+
+    milvus_cfg = retriever_cfg.knowledge_base.milvus
     vector_db: milvus = Milvus(
         embedding_model,
         collection_name=table_name,
-        connection_args=retriever_cfg.knowledge_base.milvus.get_conn_args(db_name),
+        connection_args=milvus_cfg.get_conn_args(db_name),
         search_params={'metric_type': 'L2', 'params': {'ef': ef}},
         auto_id=True,
         enable_dynamic_field=False,

@@ -31,3 +31,13 @@ def insert_knowledge_base(session: SessionDep, knowledge_base: KnowledgeBaseTabl
             raise KBExistError from e
         else:
             raise e
+
+
+def delete_knowledge_base(session: SessionDep, table_name: str):
+    statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.table_name == table_name)
+    results = session.exec(statement)
+    kb = results.one()
+    if kb:
+        logger.info(f'删除数据表 {KnowledgeBaseTable.__tablename__}:{table_name}')
+        session.delete(kb)
+        session.commit()

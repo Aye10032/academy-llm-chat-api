@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.crud.knowledge_base import insert_knowledge_base, KBExistError
+from app.crud.knowledge_base import insert_knowledge_base, KBExistError, delete_knowledge_base
 from app.crud.user import insert_user, UserExistError
 from app.db.session import get_simple_session, create_db_and_tables
 from app.models import UserTable, KnowledgeBaseTable
@@ -72,7 +72,8 @@ def _get_collection_ext() -> str:
     return user_input if user_input else 'md'
 
 
-def init_knowledge_base(file_path: str, output_path: str):
+def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
+    logger.info(f'覆盖:{drop_old}')
     # 创建知识库相关数据表
     collection_name = _get_collection_name()
     collection_title = _get_collection_title()
@@ -91,6 +92,9 @@ def init_knowledge_base(file_path: str, output_path: str):
 
     session = get_simple_session()
     logger.info('创建知识库记录...')
+    if drop_old:
+        delete_knowledge_base(session, collection_name)
+
     try:
         insert_knowledge_base(session, knowledge_base)
     except KBExistError:
@@ -106,7 +110,8 @@ def init_knowledge_base(file_path: str, output_path: str):
     vector_db = create_vector_db(
         table_name=collection_name,
         embedding_model=embedding_model,
-        db_name='llm_chat'
+        db_name='llm_chat',
+        drop_old=drop_old
     )
 
     if not os.path.exists(file_path):
@@ -160,7 +165,7 @@ def load_args(args: Namespace):
         init_user(setting.server.INIT_USER, setting.server.INIT_PASSWORD)
 
     if origin_path := args.knowledge_base:
-        init_knowledge_base(origin_path, setting.retriever.knowledge_base.STORE_PATH)
+        init_knowledge_base(origin_path, setting.retriever.knowledge_base.STORE_PATH, args.drop_old)
 
 
 if __name__ == '__main__':
@@ -179,5 +184,11 @@ if __name__ == '__main__':
         type=str,
         default='',
         help='创建知识库。若传入待建库文件所在路径，则会进行知识库文件的初始化。目前仅支持一次性处理单一类型的文件'
+    )
+    parser.add_argument(
+        '--drop_old',
+        '-d',
+        action='store_true',
+        help='是否直接覆盖原有数据'
     )
     load_args(parser.parse_args())
