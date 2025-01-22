@@ -19,6 +19,7 @@ class ServerNetworkSetting(BaseModel):
 
     SERVICE_HOST_IP: str
     SERVICE_HOST_PORT: int
+    USE_PROXY: bool
     PROXY: str
 
 
@@ -81,8 +82,8 @@ class MilvusSetting(BaseModel):
             'uri': self.URI,
             'user': self.USERNAME,
             'password': self.PASSWORD,
-            'db_name': db_name,
             'token': self.TOKEN,
+            'db_name': db_name,
             'secure': self.SECURE,
         }
 
@@ -121,6 +122,17 @@ class LLMSetting(BaseModel):
     zhipu: BaseLLMSetting
 
 
+class SearchSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    SERPER_API: str = ''
+    JINA_API: str = ''
+
+
+class ToolSetting(BaseModel):
+    search: SearchSetting
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         toml_file='config.toml',
@@ -138,6 +150,7 @@ class Settings(BaseSettings):
     fileloader: FileLoaderSetting
     retriever: RetrieverSetting
     llm: LLMSetting
+    tool: ToolSetting
 
     @classmethod
     def settings_customise_sources(
