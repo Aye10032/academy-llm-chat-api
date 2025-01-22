@@ -1,13 +1,12 @@
 from typing import Optional
 
-from sqlmodel import select
+from sqlmodel import select, Session
 
-from app.db.session import SessionDep
 from app.models import ChatSessionTable
 
 
 def get_chat_list(
-        session: SessionDep,
+        session: Session,
         email: str,
         knowledge_base_name: str
 ) -> Optional[ChatSessionTable]:
@@ -17,13 +16,13 @@ def get_chat_list(
     return session.exec(statement).all()
 
 
-def get_chat(session: SessionDep, email: str, history_id: str) -> Optional[ChatSessionTable]:
+def get_chat(session: Session, email: str, history_id: str) -> Optional[ChatSessionTable]:
     statement = (select(ChatSessionTable)
                  .where(ChatSessionTable.user_email == email)
                  .where(ChatSessionTable.history_id == history_id))
     return session.exec(statement).first()
 
 
-def insert_chat(session: SessionDep, chat_session: ChatSessionTable) -> None:
+def insert_chat(session: Session, chat_session: ChatSessionTable) -> None:
     session.add(chat_session)
     session.commit()

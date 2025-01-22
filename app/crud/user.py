@@ -3,9 +3,8 @@ from typing import Optional
 from fastapi import HTTPException
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
+from sqlmodel import select, Session
 
-from app.db.session import SessionDep
 from app.models import UserTable
 from app.schemas.user import UserPublic, UserUpdate
 
@@ -14,12 +13,12 @@ class UserExistError(ValueError):
     pass
 
 
-def get_user(session: SessionDep, email: str) -> Optional[UserTable]:
+def get_user(session: Session, email: str) -> Optional[UserTable]:
     statement = select(UserTable).where(UserTable.email == email)
     return session.exec(statement).first()
 
 
-def insert_user(session: SessionDep, user: UserTable) -> None:
+def insert_user(session: Session, user: UserTable) -> None:
     try:
         logger.debug(f'新增用户请求 ({UserPublic.model_validate(user)})')
         session.add(user)
@@ -31,7 +30,7 @@ def insert_user(session: SessionDep, user: UserTable) -> None:
             raise e
 
 
-def update_user(session: SessionDep, email: str, user: UserUpdate) -> UserTable:
+def update_user(session: Session, email: str, user: UserUpdate) -> UserTable:
     db_user = get_user(session, email)
     if not db_user:
         raise HTTPException(status_code=404, detail='用户不存在！')

@@ -1,9 +1,8 @@
 from fastapi import HTTPException
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
+from sqlmodel import select, Session
 
-from app.db.session import SessionDep
 from app.models import KnowledgeBaseTable
 from app.schemas.knowledge_base import KnowledgeBaseUpdate
 
@@ -12,17 +11,17 @@ class KBExistError(ValueError):
     pass
 
 
-def get_knowledge_base(session: SessionDep, table_name: str) -> KnowledgeBaseTable:
+def get_knowledge_base(session: Session, table_name: str):
     statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.table_name == table_name)
     return session.exec(statement).first()
 
 
-def get_knowledge_bases(session: SessionDep, offset: int, limit: int) -> list[KnowledgeBaseTable]:
+def get_knowledge_bases(session: Session, offset: int, limit: int):
     statement = select(KnowledgeBaseTable).offset(offset).limit(limit)
     return session.exec(statement).all()
 
 
-def insert_knowledge_base(session: SessionDep, knowledge_base: KnowledgeBaseTable):
+def insert_knowledge_base(session: Session, knowledge_base: KnowledgeBaseTable):
     try:
         session.add(knowledge_base)
         session.commit()
@@ -36,7 +35,7 @@ def insert_knowledge_base(session: SessionDep, knowledge_base: KnowledgeBaseTabl
 
 
 def update_knowledge_base(
-        session: SessionDep, table_name: str, kb: KnowledgeBaseUpdate
+        session: Session, table_name: str, kb: KnowledgeBaseUpdate
 ) -> KnowledgeBaseTable:
     db_kb = get_knowledge_base(session, table_name)
     if not db_kb:
@@ -50,7 +49,7 @@ def update_knowledge_base(
     return db_kb
 
 
-def delete_knowledge_base(session: SessionDep, table_name: str):
+def delete_knowledge_base(session: Session, table_name: str):
     statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.table_name == table_name)
     results = session.exec(statement)
     kb = results.first()
