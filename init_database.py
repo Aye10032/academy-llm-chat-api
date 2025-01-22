@@ -9,13 +9,15 @@ from pathlib import Path
 
 from loguru import logger
 from tqdm import tqdm
+from urllib3.exceptions import ResponseError
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.crud.knowledge_base import insert_knowledge_base, KBExistError, delete_knowledge_base
+from app.crud.knowledge_base import insert_knowledge_base, KBExistError, delete_knowledge_base, get_knowledge_base, update_knowledge_base
 from app.crud.user import insert_user, UserExistError
 from app.db.session import get_simple_session, create_db_and_tables
 from app.models import UserTable, KnowledgeBaseTable
+from app.schemas.knowledge_base import KnowledgeBaseUpdate
 from app.schemas.user import UserRole
 from app.utils.validator import validate_input, simple_char_valid
 from llm.core.model import load_embedding
@@ -23,8 +25,7 @@ from llm.file_loader import MarkdownLoader
 from llm.file_loader.loader import FileLoadError
 from llm.file_loader.pdf import PdfLoader, GrobidConnector
 from llm.rag.retriever import insert_chain
-from llm.rag.storage import create_vector_db, get_doc_db
-from llm.schemas.markdown import SourceType
+from llm.rag.storage import create_vector_db, get_doc_db, fix_null_fields, get_vector_db
 
 logger.remove()
 handler_id = logger.add(sys.stderr, level='DEBUG')
@@ -74,51 +75,76 @@ def _get_collection_ext() -> str:
 
 def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
     logger.info(f'覆盖:{drop_old}')
+    session = get_simple_session()
+
     # 创建知识库相关数据表
     collection_name = _get_collection_name()
-    collection_title = _get_collection_title()
-    collection_desc = input('\033[33m输入知识库描述： \033[0m')
-    collection_lang = _get_collection_lang()
-    collection_ext = _get_collection_ext()
-    now_time = datetime.now()
+    if get_knowledge_base(session, collection_name) and not drop_old:
+        collection_lang = _get_collection_lang()
+        collection_ext = _get_collection_ext()
 
-    knowledge_base = KnowledgeBaseTable(
-        table_name=collection_name,
-        table_title=collection_title,
-        description=collection_desc,
-        create_time=now_time,
-        last_update=now_time
-    )
+        now_time = datetime.now()
+        knowledge_base = KnowledgeBaseUpdate(
+            last_update=now_time
+        )
+        update_knowledge_base(session, collection_name, knowledge_base)
 
-    session = get_simple_session()
-    logger.info('创建知识库记录...')
-    if drop_old:
-        delete_knowledge_base(session, collection_name)
+        # 初始化向量数据库
+        embedding_model = load_embedding()
 
-    try:
-        insert_knowledge_base(session, knowledge_base)
-    except KBExistError:
-        logger.error('已经存在同名的知识库')
-        exit(0)
-    finally:
-        session.close()
+        logger.info('加载向量数据库...')
+        vector_db = get_vector_db(
+            table_name=collection_name,
+            embedding_model=embedding_model,
+            db_name='llm_chat'
+        )
+    else:
+        collection_title = _get_collection_title()
+        collection_desc = input('\033[33m输入知识库描述： \033[0m')
+        collection_lang = _get_collection_lang()
+        collection_ext = _get_collection_ext()
+        now_time = datetime.now()
 
-    # 初始化向量数据库
-    embedding_model = load_embedding()
+        knowledge_base = KnowledgeBaseTable(
+            table_name=collection_name,
+            table_title=collection_title,
+            description=collection_desc,
+            create_time=now_time,
+            last_update=now_time
+        )
 
-    logger.info('初始化向量数据库...')
-    vector_db = create_vector_db(
-        table_name=collection_name,
-        embedding_model=embedding_model,
-        db_name='llm_chat',
-        drop_old=drop_old
-    )
+        logger.info('创建知识库记录...')
+        if drop_old:
+            delete_knowledge_base(session, collection_name)
+
+        try:
+            insert_knowledge_base(session, knowledge_base)
+        except KBExistError:
+            logger.error('已经存在同名的知识库')
+            exit(0)
+        finally:
+            session.close()
+
+        # 初始化向量数据库
+        embedding_model = load_embedding()
+
+        logger.info('初始化向量数据库...')
+        vector_db = create_vector_db(
+            table_name=collection_name,
+            embedding_model=embedding_model,
+            db_name='llm_chat',
+            drop_old=drop_old
+        )
 
     if not os.path.exists(file_path):
+        logger.error(f'路径 {file_path} 不存在！')
         exit(0)
 
-    doc_db = get_doc_db(collection_name)
+    doc_db = get_doc_db(collection_name, drop_old=drop_old)
     retriever = insert_chain(vector_db, doc_db, collection_lang)
+
+    if drop_old:
+        shutil.rmtree(os.path.join(output_path, collection_name))
 
     if collection_ext == 'md':
         markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')  # pylint: disable=inconsistent-quotes
@@ -127,10 +153,18 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
 
         md_loader = MarkdownLoader(keep_title=False)
         logger.info('建立文档索引')
-        for md_file_path in tqdm(markdown_list, total=len(markdown_list)):
-            _, docs = md_loader.load(md_file_path)
+        for file in tqdm(markdown_list, total=len(markdown_list)):
+            md_file = os.path.join(md_path, Path(file).name)
+            if Path(md_file).exists():
+                continue
 
-            md_loader.save_md(os.path.join(md_path, os.path.basename(md_file_path)))
+            _, docs = md_loader.load(file)
+            md_loader.save_md(md_file)
+
+            # TODO 临时修复zilliz无法处理空值的问题
+            if get_settings().retriever.knowledge_base.milvus.SECURE:
+                docs = fix_null_fields(docs)
+
             retriever.add_documents(docs)
     elif collection_ext == 'pdf':
         pdf_list = glob.glob(f'{file_path.rstrip("/")}/*.pdf')  # pylint: disable=inconsistent-quotes
@@ -145,6 +179,9 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
             logger.info('建立文档索引')
             for file in tqdm(pdf_list, total=len(pdf_list)):
                 pdf_file = os.path.join(pdf_path, Path(file).name)
+                if Path(pdf_file).exists():
+                    continue
+
                 shutil.copyfile(file, pdf_file)
 
                 try:
@@ -152,9 +189,17 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
 
                     md_file = os.path.join(md_path, Path(file).name.replace('.pdf', '.md'))
                     loader.save_md(md_file)
+
+                    # TODO 临时修复zilliz无法处理空值的问题
+                    if get_settings().retriever.knowledge_base.milvus.SECURE:
+                        docs = fix_null_fields(docs)
                     retriever.add_documents(docs)
                 except FileLoadError:
+                    os.remove(pdf_file)
                     logger.error(f'文件{file}解析失败，请手动处理')
+                except  ResponseError:
+                    os.remove(pdf_file)
+                    logger.error(f'文件{file}下载失败，请手动处理')
 
 
 def load_args(args: Namespace):

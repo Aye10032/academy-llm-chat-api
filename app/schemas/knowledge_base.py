@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlmodel import SQLModel, Field
 
@@ -9,4 +10,13 @@ class KnowledgeBase(SQLModel):
     description: str = ''
     create_time: datetime
     last_update: datetime
-    is_active: bool = Field(default=True)
+    is_public: bool = True
+    is_active: bool = True
+
+
+class KnowledgeBaseUpdate(SQLModel):
+    table_title: Optional[str] = None
+    description: Optional[str] = None
+    create_time: Optional[datetime] = None
+    last_update: Optional[datetime] = None
+    is_active: Optional[bool] = None

@@ -100,7 +100,7 @@ class SqliteDocStore(BaseStore[str, Document]):
                     """
             cur.execute(stmt)
             self._conn.commit()
-            logger.info(f'Create table {self.table_name}')
+            logger.info(f'创建全文存储数据表 {self.table_name}')
 
         cur.close()
 
@@ -111,6 +111,7 @@ class SqliteDocStore(BaseStore[str, Document]):
             stmt = f"DROP table {self.table_name}"
             cur.execute(stmt)
             self._conn.commit()
+            logger.info(f'删除了全文存储数据表 {self.table_name}')
 
         cur.close()
 
@@ -225,9 +226,9 @@ def create_vector_db(
 
     client = MilvusClient(**retriever_cfg.knowledge_base.milvus.get_conn_args(db_name))
 
-    if drop_old:
+    if drop_old and client.has_collection(table_name):
         client.drop_collection(table_name)
-        logger.info(f'删除了旧数据表 {table_name}')
+        logger.info(f'删除了向量数据表 {table_name}')
 
     schema = MilvusClient.create_schema(
         auto_id=True,
@@ -290,18 +291,36 @@ def get_vector_db(
         collection_name=table_name,
         connection_args=milvus_cfg.get_conn_args(db_name),
         search_params={'metric_type': 'L2', 'params': {'ef': ef}},
-        auto_id=True,
-        enable_dynamic_field=False,
+        auto_id=True
     )
 
     return vector_db
 
 
-def get_doc_db(table_name: str) -> BaseStore:
+def get_doc_db(table_name: str, *, drop_old: bool = False) -> BaseStore:
     doc_store = SqliteDocStore(
         connection_string=retriever_cfg.knowledge_base.DOC_URL,
         table_name=table_name,
-        drop_old=False
+        drop_old=drop_old
     )
 
     return doc_store
+
+
+def fix_null_fields(docs: list[Document]) -> list[Document]:
+    """临时修复zilliz文档处理
+
+    目前，zilliz无法正确处理空字端，手动补全剩余字段
+    """
+    required_fields = [
+        'section',
+        'section_3',
+        'section_4',
+        'section_5',
+        'section_6',
+    ]
+    for doc in docs:
+        for field in required_fields:
+            doc.metadata.setdefault(field, '')
+
+    return docs
