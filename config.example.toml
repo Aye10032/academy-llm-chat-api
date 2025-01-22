@@ -53,6 +53,11 @@ use_proxy = false
 base_url = "https://open.bigmodel.cn/api/paas/v4/"
 api_key = ""
 
+[llm.deepseek]
+use_proxy = false
+base_url = "https://api.deepseek.com/v1"
+api_key = ""
+
 [tool.search]
 serper_api = ""
 jina_api = ""

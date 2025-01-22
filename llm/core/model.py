@@ -87,3 +87,23 @@ def load_glm4_flash() -> ChatOpenAI:
     )
 
     return llm
+
+
+def load_deepseek_v3() -> ChatOpenAI:
+    llm = ChatOpenAI(
+        model_name='deepseek-chat',
+        openai_api_base=llm_cfg.deepseek.BASE_URL,
+        openai_api_key=llm_cfg.deepseek.API_KEY
+    )
+
+    return llm
+
+
+def load_deepseek_r1() -> ChatOpenAI:
+    llm = ChatOpenAI(
+        model_name='deepseek-reasoner',
+        openai_api_base=llm_cfg.deepseek.BASE_URL,
+        openai_api_key=llm_cfg.deepseek.API_KEY
+    )
+
+    return llm

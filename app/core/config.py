@@ -120,6 +120,7 @@ class BaseLLMSetting(BaseModel):
 class LLMSetting(BaseModel):
     openai: BaseLLMSetting
     zhipu: BaseLLMSetting
+    deepseek: BaseLLMSetting
 
 
 class SearchSetting(BaseModel):
