@@ -13,8 +13,7 @@ from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
 
-from llm.core.embedding import BgeReranker
-from llm.core.model import load_gpt4o_mini
+from llm.core.model import BgeReranker, load_gpt4o_mini
 from llm.core.template import MULTIQUERY_SYSTEM_EN, MULTIQUERY_HUMAN_EN
 
 
