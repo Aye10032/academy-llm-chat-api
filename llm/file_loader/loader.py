@@ -11,6 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from pydantic import FilePath, BaseModel, Field, AnyHttpUrl
 
+from llm.core.model import load_glm4_flash
 from llm.schemas import ArticleBlock, MarkdownMeta
 
 SYS_PROMPT = """你是一个专业的文本摘要生成器。你的任务是根据用户提供的文章，生成简洁、准确、信息量丰富的摘要。摘要应：
@@ -109,7 +110,8 @@ class BaseFileLoader(BaseModel, ABC):
         ])
 
     def _conclude_article(self) -> str:
-        assert self.llm is not None
+        if self.llm is None:
+            self.llm = load_glm4_flash()
 
         prompt = ChatPromptTemplate.from_messages(
             [
