@@ -17,8 +17,12 @@ class WebSearchInput(BaseModel):
 
 
 class WebSearchTool(BaseTool):
+    """联网搜索工具
+
+    此工具主要任务是返回搜寻结果的url，具体的内容解读请结合WebLoader使用
+    """
     name: str = 'search_from_web'
-    description: str = '通过搜索引擎进行联网搜索。AI可以通过调用此工具，联网查询一些自己不清楚的或者比较新的信息。'
+    description: str = '通过搜索引擎进行联网搜索。AI可以通过调用此工具，联网查询一些自己不清楚的或者比较新的信息。此工具只有在用户特别指明联网查询或者向量数据库搜索失败的情况下调用。'
     args_schema: Type[BaseModel] = WebSearchInput
     return_direct: bool = False
     handle_tool_error: bool = True
@@ -63,6 +67,7 @@ class WebSearchTool(BaseTool):
 
             if response.status_code == 200:
                 search_data = json.loads(response.text)
+                print(search_data)
                 url_list = [
                     organic['link']
                     for organic in search_data['organic']
@@ -70,18 +75,28 @@ class WebSearchTool(BaseTool):
                 return url_list
         else:
             logger.warning('no serper api found, using ddgs instead')
-            with DDGS(proxy=config.server.network.PROXY) as ddgs:
-                search_result = ddgs.text(
-                    query,
-                    region=self.region,
-                    max_results=self.max_search_result,
-                )
-                if search_result:
-                    url_list = [
-                        result['href']
-                        for result in search_result
-                    ]
-                    return url_list
+            if config.server.network.USE_PROXY:
+                with DDGS(proxy=config.server.network.PROXY) as ddgs:
+                    search_result = ddgs.text(
+                        query,
+                        region=self.region,
+                        max_results=self.max_search_result,
+                    )
+            else:
+                with DDGS() as ddgs:
+                    search_result = ddgs.text(
+                        query,
+                        region=self.region,
+                        max_results=self.max_search_result,
+                    )
+
+            if search_result:
+                print(search_result)
+                url_list = [
+                    result['href']
+                    for result in search_result
+                ]
+                return url_list
 
         raise ToolException('所给出的问题没有在互联网上找到相关信息。')
 

@@ -1,3 +1,4 @@
+import random
 from typing import Optional, Self, Any
 
 import requests
@@ -8,6 +9,8 @@ from pydantic import AnyHttpUrl, model_validator, BaseModel, Field
 from requests import HTTPError
 
 from app.core.config import get_settings
+from app.utils.network import retry
+from llm.core.model import load_jina_reader
 from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import MarkdownMeta, ArticleBlock
 from llm.schemas.markdown import FileSource, SourceType
@@ -17,7 +20,8 @@ network_setting = get_settings().server.network
 
 class JinaData(BaseModel):
     title: str
-    description: str
+    description: Optional[str] = None
+    date: Optional[str] = None
     url: AnyHttpUrl
     content: str
     usage: dict[str, Any] = Field(default_factory=dict)
@@ -37,12 +41,16 @@ class WebLoader(BaseFileLoader):
     jina_api: Optional[str] = None
     proxy: Optional[AnyHttpUrl] = None
 
+    use_local_model: bool = Field(default=True, init=False)
+
     @model_validator(mode='after')
-    def check_jina_api(self) -> Self:
+    def check_jina(self) -> Self:
+        self.use_local_model = get_settings().tool.jina.USE_LOCAL_MODEL
+
         if self.jina_api:
             return self
 
-        if jina_api := get_settings().tool.search.JINA_API:
+        if jina_api := get_settings().tool.jina.JINA_API:
             self.jina_api = jina_api
         else:
             logger.warning('未设置jina api，解析请求将被限速')
@@ -57,24 +65,45 @@ class WebLoader(BaseFileLoader):
         self.proxy = network_setting.PROXY if network_setting.USE_PROXY else None
         return self
 
-    def _read_webpage(self, url: AnyHttpUrl) -> JinaData:
-        url = f'https://r.jina.ai/{url}'
+    @retry(delay=random.randint(3, 5))
+    def download_html(self, url: AnyHttpUrl):
         headers = {
-            'Accept': 'application/json',
-            'X-Remove-Selector': 'header, .class, #id',
-            'X-Retain-Images': 'none'
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        if self.jina_api:
-            headers['Authorization'] = f'Bearer {self.jina_api}'
-        if self.proxy:
-            headers['X-Proxy-Url'] = self.proxy
 
         response = requests.get(url, headers=headers, timeout=60)
-
         if response.status_code != 200:
             raise HTTPError('请求失败')
 
-        data = JinaData.model_validate(response.json()['data'])
+        return response.text
+
+    def _read_webpage(self, url: AnyHttpUrl) -> JinaData:
+        if self.use_local_model:
+            html_text = self.download_html(url)
+            html_reader = load_jina_reader()
+
+            json_data = html_reader.html_to_json(html_text)
+        else:
+            api_url = f'https://r.jina.ai/{url}'
+            headers = {
+                'Accept': 'application/json',
+                'X-Remove-Selector': 'header, .class, #id',
+                'X-Retain-Images': 'none',
+                'X-Respond-With': 'readerlm-v2'
+            }
+            if self.jina_api:
+                headers['Authorization'] = f'Bearer {self.jina_api}'
+            if self.proxy:
+                headers['X-Proxy-Url'] = self.proxy
+
+            response = requests.get(api_url, headers=headers, timeout=60)
+
+            if response.status_code != 200:
+                raise HTTPError(f'请求失败 code:{response.status_code}')
+
+            json_data = response.json()['data']
+
+        data = JinaData.model_validate(json_data)
         return data
 
     def load(self, origin_file_path: AnyHttpUrl, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
@@ -106,7 +135,7 @@ class WebLoader(BaseFileLoader):
             strip_headers=False
         )
 
-        head_split_docs = md_splitter.split_text(doc_data.content)
+        head_split_docs = md_splitter.split_text(doc_data.content.strip().lstrip('```markdown').rstrip('```'))
         for doc in head_split_docs:
             if not 'section' in doc.metadata:
                 doc.metadata['section'] = 'content'
