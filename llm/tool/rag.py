@@ -38,7 +38,7 @@ class SelectKnowledgeBase(BaseTool):
         with Session(engine) as session:
             kb_list = get_knowledge_bases(session, 0, 20)
 
-        available_kbs = '================='.join([
+        available_kbs = '\n=================\n'.join([
             f'name: {kb.table_name}\ndescription: {kb.description}'
             for kb in kb_list
         ])
@@ -90,5 +90,4 @@ class RAGSearchTool(BaseTool):
         )
 
         output = retriever.invoke(query)
-
-        return clean_output
+        return output
