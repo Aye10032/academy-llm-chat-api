@@ -505,7 +505,7 @@ class ReaderLM(BaseModel):
         html = self.clean_html(html)
         input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer, schema=schema)
 
-        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors="pt").to(self.device)
+        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
         outputs = self.jina_model.generate(
             inputs, max_new_tokens=1024, do_sample=False, repetition_penalty=1.08
         )
