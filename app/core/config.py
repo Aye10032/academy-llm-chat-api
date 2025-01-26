@@ -56,8 +56,8 @@ class BaseModelSetting(BaseModel):
     MODEL: str
     SAVE_LOCAL: bool
     FP16: bool
-    NORMALIZE: bool
-    DEVICE: str
+    NORMALIZE: bool = False
+    DEVICE: str = 'cpu'
     LOCAL_PATH: str = Field(default='', init=False)
 
     @model_validator(mode='after')
@@ -130,8 +130,14 @@ class SearchSetting(BaseModel):
     JINA_API: str = ''
 
 
+class JinaSetting(BaseModelSetting):
+    JINA_API: str
+    USE_LOCAL_MODEL: bool
+
+
 class ToolSetting(BaseModel):
     search: SearchSetting
+    jina: JinaSetting
 
 
 class Settings(BaseSettings):

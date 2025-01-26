@@ -60,4 +60,11 @@ api_key = ""
 
 [tool.search]
 serper_api = ""
+
+[tool.jina]
 jina_api = ""
+use_loacl_model = true
+model = "jinaai/ReaderLM-v2"
+save_local = true
+fp16 = false
+device = "cuda"

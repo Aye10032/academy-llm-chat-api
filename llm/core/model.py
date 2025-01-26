@@ -1,8 +1,11 @@
+import json
 import os
+import re
 from typing import Any, Optional, Union, Sequence
 
 import numpy as np
 import torch
+import transformers.utils.logging
 from langchain_core.callbacks import Callbacks
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -18,6 +21,7 @@ from app.utils.cache import cache_model
 
 embd_cfg = get_settings().retriever.embedding
 reranker_cfg = get_settings().retriever.reranker
+jina_cfg = get_settings().tool.jina
 llm_cfg = get_settings().llm
 
 
@@ -316,6 +320,199 @@ class BgeReranker(BaseModel):
         )
 
 
+# Patterns
+SCRIPT_PATTERN = r'<[ ]*script.*?\/[ ]*script[ ]*>'
+STYLE_PATTERN = r'<[ ]*style.*?\/[ ]*style[ ]*>'
+META_PATTERN = r'<[ ]*meta.*?>'
+COMMENT_PATTERN = r'<[ ]*!--.*?--[ ]*>'
+LINK_PATTERN = r'<[ ]*link.*?>'
+BASE64_IMG_PATTERN = r'<img[^>]+src="data:image/[^;]+;base64,[^"]+"[^>]*>'
+SVG_PATTERN = r'(<svg[^>]*>)(.*?)(<\/svg>)'
+
+
+class ReaderLM(BaseModel):
+    jina_model_name: str
+    jina_tokenizer: Any = None
+    jina_model: Any = None
+
+    """
+    Keyword arguments to pass to the model.
+
+    use_fp16: bool = False,
+    device: Union[str, int] = None
+    """
+    use_fp16: bool = False,
+    device: Optional[str] = None
+
+    """
+    Keyword arguments to pass when calling the `compress_documents` method of the model.
+
+    batch_size: int = 256,
+    max_length: int = 512, 
+    normalize: bool = False
+    """
+    encode_kwargs: dict[str, Any] = Field(default_factory=dict)
+
+    local_load: bool = False
+    local_path: str = ''
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+
+        try:
+            from transformers import (
+                AutoTokenizer,
+                AutoModelForCausalLM,
+                PreTrainedTokenizerFast,
+                PreTrainedModel,
+            )
+
+        except ImportError as exc:
+            raise ImportError(
+                'Could not import transformers python package. '
+                'Please install it with `pip install transformers`.'
+            ) from exc
+
+        transformers.utils.logging.enable_progress_bar()
+
+        if self.local_load:
+            try:
+                self.jina_tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(self.local_path)
+                self.jina_model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(self.local_path)
+            except EnvironmentError:
+                logger.warning('Load model from local fail. Download from huggingface...')
+
+                logger.debug(self.jina_model_name)
+                self.jina_tokenizer = AutoTokenizer.from_pretrained(self.jina_model_name, force_download=True)
+                self.jina_model = AutoModelForCausalLM.from_pretrained(self.jina_model_name, force_download=True)
+
+                # save to local
+                os.makedirs(self.local_path, exist_ok=True)
+                self.jina_tokenizer.save_pretrained(self.local_path)
+                self.jina_model.save_pretrained(self.local_path)
+        else:
+            self.jina_tokenizer = AutoTokenizer.from_pretrained(self.jina_model_name)
+            self.jina_model = AutoModelForCausalLM.from_pretrained(self.jina_model_name)
+
+        if not self.device:
+            self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+
+        if not torch.cuda.is_available():
+            self.use_fp16 = False
+
+        if self.use_fp16:
+            self.jina_model.half()
+
+        self.jina_model = self.jina_model.to(torch.device(self.device))
+        self.jina_model.eval()
+
+    @staticmethod
+    def replace_svg(html: str, new_content: str = "this is a placeholder") -> str:
+        return re.sub(
+            SVG_PATTERN,
+            lambda match: f"{match.group(1)}{new_content}{match.group(3)}",
+            html,
+            flags=re.DOTALL,
+        )
+
+    @staticmethod
+    def replace_base64_images(html: str, new_image_src: str = "#") -> str:
+        return re.sub(BASE64_IMG_PATTERN, f'<img src="{new_image_src}"/>', html)
+
+    def clean_html(self, html: str, clean_svg: bool = False, clean_base64: bool = False):
+        html = re.sub(
+            SCRIPT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+        )
+        html = re.sub(
+            STYLE_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+        )
+        html = re.sub(
+            META_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+        )
+        html = re.sub(
+            COMMENT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+        )
+        html = re.sub(
+            LINK_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+        )
+
+        if clean_svg:
+            html = self.replace_svg(html)
+        if clean_base64:
+            html = self.replace_base64_images(html)
+        return html
+
+    @staticmethod
+    def create_prompt(
+            text: str, tokenizer=None, instruction: str = None, schema: str = None
+    ) -> str:
+        """
+        Create a prompt for the model with optional instruction and JSON schema.
+        """
+        if not instruction:
+            instruction = 'Extract the main content from the given HTML and convert it to Markdown format.'
+        if schema:
+            instruction = 'Extract the specified information from a list of news threads and present it in a structured JSON format.'
+            prompt = f'{instruction}\n```html\n{text}\n```\nThe JSON schema is as follows:```json\n{schema}\n```'
+        else:
+            prompt = f'{instruction}\n```html\n{text}\n```'
+
+        messages = [
+            {
+                'role': 'user',
+                'content': prompt,
+            }
+        ]
+
+        return tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+
+    def html_to_md(self, html: str) -> str:
+
+        html = self.clean_html(html)
+
+        input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer)
+        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
+        outputs = self.jina_model.generate(
+            inputs, max_new_tokens=1024, temperature=0, do_sample=False, repetition_penalty=1.08
+        )
+
+        return self.jina_tokenizer.decode(outputs[0])
+
+    def html_to_json(self, html: str) -> str:
+        schema = """
+        {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "author": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": ["title", "author", "date", "content"]
+        }
+        """
+
+        html = self.clean_html(html)
+        input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer, schema=schema)
+
+        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors="pt").to(self.device)
+        outputs = self.jina_model.generate(
+            inputs, max_new_tokens=1024, do_sample=False, repetition_penalty=1.08
+        )
+        json_text = self.jina_tokenizer.decode(outputs[0])
+        return json.loads(json_text)
+
+
 @cache_model()
 def load_embedding() -> BgeM3Embeddings:
     logger.info(f'加载Embedding模型 {embd_cfg.MODEL}...')
@@ -348,6 +545,21 @@ def load_reranker() -> BgeReranker:
     )
 
     return reranker
+
+
+@cache_model()
+def load_jina_reader() -> ReaderLM:
+    logger.info(f'加载html读取模型 {jina_cfg.MODEL}...')
+
+    reader = ReaderLM(
+        jina_model_name=jina_cfg.MODEL,
+        use_fp16=jina_cfg.FP16,
+        device=jina_cfg.DEVICE,
+        local_load=jina_cfg.SAVE_LOCAL,
+        local_path=jina_cfg.LOCAL_PATH
+    )
+
+    return reader
 
 
 def load_gpt4o() -> ChatOpenAI:
