@@ -18,6 +18,19 @@ from llm.schemas.markdown import FileSource, SourceType
 network_setting = get_settings().server.network
 
 
+@retry(delay=random.randint(3, 5))
+def _download_html(url: AnyHttpUrl) -> str:
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+
+    response = requests.get(url, headers=headers, timeout=60)
+    if response.status_code != 200:
+        raise HTTPError('请求失败')
+
+    return response.text
+
+
 class JinaData(BaseModel):
     title: str
     description: Optional[str] = None
@@ -27,8 +40,8 @@ class JinaData(BaseModel):
     usage: dict[str, Any] = Field(default_factory=dict)
 
 
-class WebLoader(BaseFileLoader):
-    """通用网页加载器
+class JinaWebLoader(BaseFileLoader):
+    """网页加载器
 
     使用jina reader进行网页的解析。若不设置API，则请求会被限速，
     具体可见：https://jina.ai/reader/
@@ -66,37 +79,30 @@ class WebLoader(BaseFileLoader):
         return self
 
     @retry(delay=random.randint(3, 5))
-    def download_html(self, url: AnyHttpUrl):
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-
-        response = requests.get(url, headers=headers, timeout=60)
-        if response.status_code != 200:
-            raise HTTPError('请求失败')
-
-        return response.text
-
     def _read_webpage(self, url: AnyHttpUrl) -> JinaData:
         if self.use_local_model:
-            html_text = self.download_html(url)
+            html_text = _download_html(url)
             html_reader = load_jina_reader()
 
             json_data = html_reader.html_to_json(html_text)
         else:
-            api_url = f'https://r.jina.ai/{url}'
+            api_url = 'https://r.jina.ai/'
             headers = {
                 'Accept': 'application/json',
+                'Content-Type': 'application/json',
                 'X-Remove-Selector': 'header, .class, #id',
                 'X-Retain-Images': 'none',
-                'X-Respond-With': 'readerlm-v2'
+                'X-Timeout': '30'
+            }
+            data = {
+                'url': url
             }
             if self.jina_api:
                 headers['Authorization'] = f'Bearer {self.jina_api}'
             if self.proxy:
                 headers['X-Proxy-Url'] = self.proxy
 
-            response = requests.get(api_url, headers=headers, timeout=60)
+            response = requests.post(api_url, headers=headers, json=data, timeout=60)
 
             if response.status_code != 200:
                 raise HTTPError(f'请求失败 code:{response.status_code}')
