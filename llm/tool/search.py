@@ -67,7 +67,6 @@ class WebSearchTool(BaseTool):
 
             if response.status_code == 200:
                 search_data = json.loads(response.text)
-                print(search_data)
                 url_list = [
                     organic['link']
                     for organic in search_data['organic']
@@ -91,7 +90,6 @@ class WebSearchTool(BaseTool):
                     )
 
             if search_result:
-                print(search_result)
                 url_list = [
                     result['href']
                     for result in search_result
@@ -102,7 +100,5 @@ class WebSearchTool(BaseTool):
 
     def _run(self, query: str) -> list[str]:
         """调用工具进行联网搜索"""
-        logger.info(f'Calling WebSearchTool with query {query}')
-
         urls = self.search(query)
         return urls
