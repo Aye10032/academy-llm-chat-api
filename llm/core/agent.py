@@ -21,7 +21,9 @@ from llm.tool.search import WebSearchTool
 class SearchAgentState(MessagesState):
     origin_question: str
     search_results: Annotated[list[Document], operator.add]
-    sources: Annotated[list[str], operator.add]
+    missed_input_token: Annotated[int, operator.add]
+    cached_input_token: Annotated[int, operator.add]
+    output_token: Annotated[int, operator.add]
 
 
 class SearchAgent:
@@ -49,9 +51,16 @@ class SearchAgent:
         llm_with_tool = self.llm.bind_tools(self.tools, tool_choice='required')
         messages = state['messages']
         response = llm_with_tool.invoke(messages)
-        return {'messages': [response]}
 
-    def choose_tool(self, state: SearchAgentState):
+        token_usage = response.response_metadata['token_usage']
+        return {
+            'messages': [response],
+            'missed_input_token': token_usage['prompt_cache_miss_tokens'],
+            'cached_input_token': token_usage['prompt_cache_hit_tokens'],
+            'output_token': token_usage['completion_tokens'],
+        }
+
+    def choose_tool(self, state: SearchAgentState) -> Literal['web_tool', 'rag_tool']:
         messages = state['messages']
         tool_calls = messages[-1].tool_calls
 
@@ -67,7 +76,9 @@ class SearchAgent:
         tool_call_id = tool_call['id']
 
         if tool_call['name'] == self.select_tool.name:
-            select_result: SelectKnowledgeBaseOutput = self.select_tool.invoke(tool_call['args'])
+            select_dict: SelectKnowledgeBaseOutput = self.select_tool.invoke(tool_call['args'])
+            select_result = select_dict['parsed']
+            token_usage = select_dict['raw'].response_metadata['token_usage']
 
             if not select_result.table_name:
                 if self.use_web:
@@ -75,13 +86,18 @@ class SearchAgent:
                         update={
                             'messages': [
                                 ToolMessage('没有合适的向量数据库，向量数据库查询失败。', tool_call_id=tool_call_id)
-                            ]
+                            ],
+                            'missed_input_token': token_usage['prompt_cache_miss_tokens'],
+                            'cached_input_token': token_usage['prompt_cache_hit_tokens'],
+                            'output_token': token_usage['completion_tokens'],
                         }, goto='search_agent'
                     )
                 else:
                     return Command(
                         update={
-                            'search_results': []
+                            'missed_input_token': token_usage['prompt_cache_miss_tokens'],
+                            'cached_input_token': token_usage['prompt_cache_hit_tokens'],
+                            'output_token': token_usage['completion_tokens'],
                         },
                         goto='search_conclude'
                     )
@@ -92,11 +108,15 @@ class SearchAgent:
             })
         else:
             search_result = self.rag_search_tool.invoke(tool_call['args'])
+            token_usage = None
 
         if search_result or not self.use_web:
             return Command(
                 update={
-                    'search_results': search_result
+                    'search_results': search_result,
+                    'missed_input_token': token_usage['prompt_cache_miss_tokens'] if token_usage else 0,
+                    'cached_input_token': token_usage['prompt_cache_hit_tokens'] if token_usage else 0,
+                    'output_token': token_usage['completion_tokens'] if token_usage else 0,
                 },
                 goto='search_conclude'
             )
@@ -105,7 +125,10 @@ class SearchAgent:
             update={
                 'messages': [
                     ToolMessage('向量数据库查询失败', tool_call_id=tool_call_id)
-                ]
+                ],
+                'missed_input_token': token_usage['prompt_cache_miss_tokens'] if token_usage else 0,
+                'cached_input_token': token_usage['prompt_cache_hit_tokens'] if token_usage else 0,
+                'output_token': token_usage['completion_tokens'] if token_usage else 0,
             },
             goto='search_agent'
         )
@@ -137,7 +160,13 @@ class SearchAgent:
             'doc_str': format_docs(clean_output, 'zh')
         })
 
-        return {'messages': [response]}
+        token_usage = response.response_metadata['token_usage']
+        return {
+            'messages': [response],
+            'missed_input_token': token_usage['prompt_cache_miss_tokens'],
+            'cached_input_token': token_usage['prompt_cache_hit_tokens'],
+            'output_token': token_usage['completion_tokens'],
+        }
 
     def build(self):
         searcher = StateGraph(SearchAgentState)

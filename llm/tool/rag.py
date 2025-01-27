@@ -43,7 +43,7 @@ class SelectKnowledgeBase(BaseTool):
             for kb in kb_list
         ])
 
-        llm = load_deepseek_v3().with_structured_output(SelectKnowledgeBaseOutput)
+        llm = load_deepseek_v3().with_structured_output(SelectKnowledgeBaseOutput, include_raw=True)
         prompt = ChatPromptTemplate.from_messages([
             ('system', SELECT_KNOWLEDGE_BASE_SYSTEM_ZH),
             ('human', '{human_input}')
