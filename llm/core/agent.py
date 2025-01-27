@@ -8,10 +8,11 @@ from langchain_core.documents import Document
 from langgraph.constants import START
 from langgraph.types import Command
 from langgraph.graph import StateGraph, END, MessagesState
+from tqdm import tqdm
 
-from llm.core.model import load_gpt4o, load_deepseek_v3, load_reranker
+from llm.core.model import load_deepseek_v3, load_reranker
 from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH
-from llm.file_loader.web import WebLoader
+from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
 from llm.tool.search import WebSearchTool
@@ -54,14 +55,11 @@ class SearchAgent:
         messages = state['messages']
         tool_calls = messages[-1].tool_calls
 
-        if tool_calls:
-            tool_call = tool_calls[0]
-            if tool_call['name'] == self.web_search_tool.name:
-                return 'web_tool'
-            else:
-                return 'rag_tool'
+        tool_call = tool_calls[0]
+        if tool_call['name'] == self.web_search_tool.name:
+            return 'web_tool'
         else:
-            return '__end__'
+            return 'rag_tool'
 
     def rag_tool_node(self, state: SearchAgentState) -> Command[Literal['search_agent', 'search_conclude']]:
         messages = state['messages']
@@ -72,13 +70,21 @@ class SearchAgent:
             select_result: SelectKnowledgeBaseOutput = self.select_tool.invoke(tool_call['args'])
 
             if not select_result.table_name:
-                return Command(
-                    update={
-                        'messages': [
-                            ToolMessage('没有合适的向量数据库，向量数据库查询失败。', tool_call_id=tool_call_id)
-                        ]
-                    }, goto='search_agent'
-                )
+                if self.use_web:
+                    return Command(
+                        update={
+                            'messages': [
+                                ToolMessage('没有合适的向量数据库，向量数据库查询失败。', tool_call_id=tool_call_id)
+                            ]
+                        }, goto='search_agent'
+                    )
+                else:
+                    return Command(
+                        update={
+                            'search_results': []
+                        },
+                        goto='search_conclude'
+                    )
 
             search_result = self.rag_search_tool.invoke({
                 'query': select_result.question,
@@ -111,8 +117,8 @@ class SearchAgent:
         search_urls = self.web_search_tool.invoke(tool_call['args'])
 
         all_web_docs = []
-        for url in search_urls:
-            web_loader = WebLoader()
+        for url in tqdm(search_urls, total=len(search_urls)):
+            web_loader = JinaWebLoader()
             _, docs = web_loader.load(url)
             all_web_docs.extend(docs)
 
@@ -121,9 +127,6 @@ class SearchAgent:
     def search_conclude_node(self, state: SearchAgentState):
         reranker = load_reranker()
         clean_output = reranker.compress_documents(state['search_results'], state['origin_question'])
-
-        for doc in clean_output:
-            source = doc.metadata['source']
 
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(CONCLUDE_DOCUMENTS_SYSTEM_ZH),
