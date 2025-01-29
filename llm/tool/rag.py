@@ -6,12 +6,14 @@ from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import BaseTool, ToolException
+from langchain_openai import ChatOpenAI
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session
 
 from app.crud.knowledge_base import get_knowledge_bases
 from app.db.session import engine
+from app.utils.network import retry
 from llm.core.model import load_embedding, load_gpt4o, load_deepseek_v3, load_reranker
 from llm.core.template import SELECT_KNOWLEDGE_BASE_SYSTEM_ZH
 from llm.rag.storage import get_vector_db, get_doc_db
@@ -34,6 +36,16 @@ class SelectKnowledgeBase(BaseTool):
     return_direct: bool = False
     handle_tool_error: bool = True
 
+    llm: Optional[ChatOpenAI] = None
+
+    @model_validator(mode='after')
+    def init_llm(self):
+        if self.llm is None:
+            self.llm = load_gpt4o()
+
+        return self
+
+    # @retry(delay=1)
     def _run(self, query: str) -> SelectKnowledgeBaseOutput:
         with Session(engine) as session:
             kb_list = get_knowledge_bases(session, 0, 20)
@@ -43,7 +55,7 @@ class SelectKnowledgeBase(BaseTool):
             for kb in kb_list
         ])
 
-        llm = load_deepseek_v3().with_structured_output(SelectKnowledgeBaseOutput, include_raw=True)
+        llm = self.llm.with_structured_output(SelectKnowledgeBaseOutput, include_raw=True)
         prompt = ChatPromptTemplate.from_messages([
             ('system', SELECT_KNOWLEDGE_BASE_SYSTEM_ZH),
             ('human', '{human_input}')

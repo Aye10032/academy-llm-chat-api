@@ -3,6 +3,7 @@ import os
 import re
 from typing import Any, Optional, Union, Sequence
 
+import httpx
 import numpy as np
 import torch
 import transformers.utils.logging
@@ -564,9 +565,10 @@ def load_jina_reader() -> ReaderLM:
 
 def load_gpt4o() -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
+        http_client = httpx.Client(proxy=get_settings().server.network.PROXY)
         llm = ChatOpenAI(
             model_name='gpt-4o',
-            openai_proxy=get_settings().server.network.PROXY,
+            http_client=http_client,
             temperature=0.4,
             openai_api_key=llm_cfg.openai.API_KEY
         )
@@ -607,11 +609,23 @@ def load_glm4_flash() -> ChatOpenAI:
     return llm
 
 
-def load_deepseek_v3() -> ChatOpenAI:
+def load_glm4_air() -> ChatOpenAI:
+    llm = ChatOpenAI(
+        model_name='glm-4-air',
+        openai_api_base=llm_cfg.zhipu.BASE_URL,
+        openai_api_key=llm_cfg.zhipu.API_KEY,
+        temperature=0.05,
+    )
+
+    return llm
+
+
+def load_deepseek_v3(temperature: float = 0.0) -> ChatOpenAI:
     llm = ChatOpenAI(
         model_name='deepseek-chat',
         openai_api_base=llm_cfg.deepseek.BASE_URL,
-        openai_api_key=llm_cfg.deepseek.API_KEY
+        openai_api_key=llm_cfg.deepseek.API_KEY,
+        temperature=temperature
     )
 
     return llm
