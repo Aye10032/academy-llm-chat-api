@@ -18,7 +18,7 @@ langchain_community~=0.3.9
 langchain-milvus==0.1.8
 langgraph~=0.2.66
 pymilvus==2.5.3
-transformers~=4.46.3
+transformers~=4.48.1
 # torch~=2.5.0
 
 # 其它
