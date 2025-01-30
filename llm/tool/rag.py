@@ -5,6 +5,7 @@ from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException
 from langchain_openai import ChatOpenAI
 from loguru import logger
@@ -45,8 +46,7 @@ class SelectKnowledgeBase(BaseTool):
 
         return self
 
-    # @retry(delay=1)
-    def _run(self, query: str) -> SelectKnowledgeBaseOutput:
+    def _run(self, query: str, config: Optional[RunnableConfig] = None) -> SelectKnowledgeBaseOutput:
         with Session(engine) as session:
             kb_list = get_knowledge_bases(session, 0, 20)
 
@@ -64,7 +64,7 @@ class SelectKnowledgeBase(BaseTool):
         result: SelectKnowledgeBaseOutput = chain.invoke({
             'available_kbs': available_kbs,
             'human_input': query
-        })
+        }, config)
 
         return result
 
@@ -85,7 +85,7 @@ class RAGSearchTool(BaseTool):
             self,
             query: str,
             target_collection: str,
-            run_manager: Optional[CallbackManagerForToolRun] = None
+            config: Optional[RunnableConfig] = None
     ) -> list[Document]:
         """从向量数据库中进行查询操作"""
         logger.info(f'Calling VecstoreSearchTool with query {query}')
@@ -101,5 +101,5 @@ class RAGSearchTool(BaseTool):
             search_kwargs={'k': 8, 'fetch_k': 10}
         )
 
-        output = retriever.invoke(query)
+        output = retriever.invoke(query, config)
         return output

@@ -200,5 +200,11 @@ class SearchAgent(BaseModel):
         return searcher.compile()
 
 
+class MainAgentState(MessagesState):
+    origin_question: str
+    search_results: Annotated[list[Document], operator.add]
+    input_token: Annotated[int, operator.add]
+    cached_input_token: Annotated[int, operator.add]
+    output_token: Annotated[int, operator.add]
 class MainAgent(BaseModel):
     pass
