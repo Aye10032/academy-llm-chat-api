@@ -86,23 +86,19 @@ class JinaWebLoader(BaseFileLoader):
 
             json_data = html_reader.html_to_json(html_text)
         else:
-            api_url = 'https://r.jina.ai/'
+            api_url = f'https://r.jina.ai/{url}'
             headers = {
                 'Accept': 'application/json',
-                'Content-Type': 'application/json',
                 'X-Remove-Selector': 'header, .class, #id',
                 'X-Retain-Images': 'none',
-                'X-Timeout': '30'
-            }
-            data = {
-                'url': url
+                'X-Timeout': '120'
             }
             if self.jina_api:
                 headers['Authorization'] = f'Bearer {self.jina_api}'
-            if self.proxy:
-                headers['X-Proxy-Url'] = self.proxy
+            # if self.proxy:
+            #     headers['X-Proxy-Url'] = self.proxy
 
-            response = requests.post(api_url, headers=headers, json=data, timeout=60)
+            response = requests.get(api_url, headers=headers, timeout=120)
 
             if response.status_code != 200:
                 raise HTTPError(f'请求失败 code:{response.status_code}')
