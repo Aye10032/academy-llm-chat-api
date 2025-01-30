@@ -55,7 +55,7 @@ class SelectKnowledgeBase(BaseTool):
             for kb in kb_list
         ])
 
-        llm = self.llm.with_structured_output(SelectKnowledgeBaseOutput, include_raw=True)
+        llm = self.llm.with_structured_output(SelectKnowledgeBaseOutput, include_raw=True, method='function_calling')
         prompt = ChatPromptTemplate.from_messages([
             ('system', SELECT_KNOWLEDGE_BASE_SYSTEM_ZH),
             ('human', '{human_input}')
