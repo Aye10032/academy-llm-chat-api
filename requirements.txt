@@ -1,4 +1,4 @@
-# 后端框架相关
+# for web api
 fastapi~=0.112.0
 uvicorn~=0.30.0
 PyJWT~=2.10.0
@@ -10,7 +10,7 @@ bcrypt~=4.2.0
 passlib[bcrypt]~=1.7.4
 python-multipart==0.0.18
 
-# llm相关
+# for llm
 httpx~=0.28.0
 langchain~=0.3.17
 langchain-openai~=0.3.3
@@ -19,9 +19,9 @@ langchain-milvus==0.1.8
 langgraph~=0.2.68
 pymilvus==2.5.3
 transformers~=4.48.1
-# torch~=2.5.0
+# torch~=2.6.0
 
-# 其它
+# others
 loguru
 tqdm
 aiohttp~=3.11.8
