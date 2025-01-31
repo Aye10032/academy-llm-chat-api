@@ -1,15 +1,19 @@
+import datetime
 import random
+import re
 from typing import Optional, Self, Any
 
 import requests
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.document_transformers import MarkdownifyTransformer
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from loguru import logger
-from pydantic import AnyHttpUrl, model_validator, BaseModel, Field
+from pydantic import AnyHttpUrl, model_validator, BaseModel, Field, FilePath
 from requests import HTTPError
 
 from app.core.config import get_settings
-from app.utils.network import retry
+from app.utils.network import retry, download_html
 from llm.core.model import load_jina_reader
 from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import MarkdownMeta, ArticleBlock
@@ -18,17 +22,81 @@ from llm.schemas.markdown import FileSource, SourceType
 network_setting = get_settings().server.network
 
 
-@retry(delay=random.randint(3, 5))
-def _download_html(url: AnyHttpUrl) -> str:
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+class SimpleWebLoader(BaseFileLoader):
 
-    response = requests.get(url, headers=headers, timeout=60)
-    if response.status_code != 200:
-        raise HTTPError('请求失败')
+    def load(self, origin_file_path: AnyHttpUrl, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
+        if network_setting.USE_PROXY:
+            loader = WebBaseLoader(
+                origin_file_path,
+                header_template={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                encoding='utf-8',
+                proxies={
+                    'http': network_setting.PROXY,
+                    'https': network_setting.PROXY
+                }
+            )
+        else:
+            loader = WebBaseLoader(
+                origin_file_path,
+                header_template={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                encoding='utf-8'
+            )
 
-    return response.text
+        docs = loader.load()
+        markdownify = MarkdownifyTransformer()
+        docs_transform = markdownify.transform_documents(docs)
+        assert len(docs_transform) == 1
+
+        now_time = datetime.datetime.now()
+        title = docs_transform[0].metadata['title']
+        self.file_meta = MarkdownMeta(
+            title=kwargs.get('title', title),
+            author='',
+            year=kwargs.get('year', now_time.year),
+            source=[
+                FileSource(source_url=origin_file_path, source_type=SourceType.WEB)
+            ]
+        )
+
+        self.article = [ArticleBlock(text=self.file_meta.title, text_level=1)]
+        self.article.extend([
+            ArticleBlock(text=doc.page_content)
+            for doc in docs_transform
+        ])
+
+        md_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=[
+                ('#', 'title'),
+                ('##', 'section'),
+                ('###', 'section_3'),
+                ('####', 'section_4'),
+                ('#####', 'section_5'),
+                ('######', 'section_6'),
+            ],
+            strip_headers=False
+        )
+
+        head_split_docs = md_splitter.split_text(docs_transform[0].page_content)
+        for doc in head_split_docs:
+            if not 'section' in doc.metadata:
+                doc.metadata['section'] = 'content'
+
+            doc.metadata.update({
+                'title': self.file_meta.title,
+                'author': self.file_meta.author,
+                'year': self.file_meta.year,
+                'type': 'content',
+                'source': self.file_meta.model_dump()['source']
+            })
+
+            if 'additional_metadata' in kwargs:
+                doc.metadata.update(kwargs.get('additional_metadata'))
+
+        return self.file_meta, head_split_docs
 
 
 class JinaData(BaseModel):
@@ -81,7 +149,7 @@ class JinaWebLoader(BaseFileLoader):
     @retry(delay=random.randint(3, 5))
     def _read_webpage(self, url: AnyHttpUrl) -> JinaData:
         if self.use_local_model:
-            html_text = _download_html(url)
+            html_text = download_html(url)
             html_reader = load_jina_reader()
 
             json_data = html_reader.html_to_json(html_text)

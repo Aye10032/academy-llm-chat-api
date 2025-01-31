@@ -19,6 +19,7 @@ from tqdm import tqdm
 
 from app.core.config import get_settings
 from app.utils.cache import cache_model
+from app.utils.network import clean_html
 
 embd_cfg = get_settings().retriever.embedding
 reranker_cfg = get_settings().retriever.reranker
@@ -321,16 +322,6 @@ class BgeReranker(BaseModel):
         )
 
 
-# Patterns
-SCRIPT_PATTERN = r'<[ ]*script.*?\/[ ]*script[ ]*>'
-STYLE_PATTERN = r'<[ ]*style.*?\/[ ]*style[ ]*>'
-META_PATTERN = r'<[ ]*meta.*?>'
-COMMENT_PATTERN = r'<[ ]*!--.*?--[ ]*>'
-LINK_PATTERN = r'<[ ]*link.*?>'
-BASE64_IMG_PATTERN = r'<img[^>]+src="data:image/[^;]+;base64,[^"]+"[^>]*>'
-SVG_PATTERN = r'(<svg[^>]*>)(.*?)(<\/svg>)'
-
-
 class ReaderLM(BaseModel):
     jina_model_name: str
     jina_tokenizer: Any = None
@@ -408,42 +399,6 @@ class ReaderLM(BaseModel):
         self.jina_model.eval()
 
     @staticmethod
-    def replace_svg(html: str, new_content: str = "this is a placeholder") -> str:
-        return re.sub(
-            SVG_PATTERN,
-            lambda match: f"{match.group(1)}{new_content}{match.group(3)}",
-            html,
-            flags=re.DOTALL,
-        )
-
-    @staticmethod
-    def replace_base64_images(html: str, new_image_src: str = "#") -> str:
-        return re.sub(BASE64_IMG_PATTERN, f'<img src="{new_image_src}"/>', html)
-
-    def clean_html(self, html: str, clean_svg: bool = False, clean_base64: bool = False):
-        html = re.sub(
-            SCRIPT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-        html = re.sub(
-            STYLE_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-        html = re.sub(
-            META_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-        html = re.sub(
-            COMMENT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-        html = re.sub(
-            LINK_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-
-        if clean_svg:
-            html = self.replace_svg(html)
-        if clean_base64:
-            html = self.replace_base64_images(html)
-        return html
-
-    @staticmethod
     def create_prompt(
             text: str, tokenizer=None, instruction: str = None, schema: str = None
     ) -> str:
@@ -471,7 +426,7 @@ class ReaderLM(BaseModel):
 
     def html_to_md(self, html: str) -> str:
 
-        html = self.clean_html(html)
+        html = clean_html(html)
 
         input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer)
         inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
@@ -503,7 +458,7 @@ class ReaderLM(BaseModel):
         }
         """
 
-        html = self.clean_html(html)
+        html = clean_html(html)
         input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer, schema=schema)
 
         inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
