@@ -21,7 +21,7 @@ from app.schemas.chat_session import ChatSession
 from app.schemas.knowledge_base import KnowledgeBase
 from app.schemas.user import UserUpdate
 from llm.core.chat import rag_chat
-from llm.core.model import load_glm4_flash, load_embedding, load_reranker
+from llm.core.model import load_embedding, load_reranker
 from llm.rag.retriever import base_retriever
 from llm.rag.storage import get_vector_db, get_doc_db
 
