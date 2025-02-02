@@ -29,7 +29,7 @@ from llm.rag.storage import get_vector_db, get_doc_db
 class ChatRequest(BaseModel):
     message: str
     knowledge_base_name: str
-    history_id: str
+    chat_uid: str
 
 
 class ChatEventType(Enum):
@@ -66,57 +66,57 @@ async def read_knowledge_bases(
 @router.get('/chats', response_model=list[ChatSession])
 async def get_chats(
         session: SessionDep,
-        knowledge_base_name: str,
+        knowledge_base_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
     """返回用户在对应知识库下的对话列表
 
     Args:
         session: 数据库连接会话
-        knowledge_base_name:
+        knowledge_base_uid: 所属知识库的uid
         current_user:
 
     Returns:
 
     """
-    return get_chat_list(session, str(current_user.email), knowledge_base_name)
+    return get_chat_list(session, str(current_user.email), knowledge_base_uid)
 
 
-@router.patch('/chat/{knowledge_base_name}', description='在对应知识库下新建对话')
+@router.patch('/chat/{knowledge_base_uid}', description='在对应知识库下新建对话')
 async def add_new_chat(
         session: SessionDep,
-        knowledge_base_name: str,
+        knowledge_base_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ) -> str:
     now_time = datetime.now()
 
     new_chat = ChatSessionTable(
-        history_id=str(uuid4()),
-        knowledge_base_name=knowledge_base_name,
+        chat_uid=str(uuid4()),
+        parent_uid=knowledge_base_uid,
         user_email=str(current_user.email),
         create_time=now_time,
         update_time=now_time
     )
     insert_chat(session, new_chat)
-    return new_chat.history_id
+    return new_chat.chat_uid
 
 
-@router.get('/chat_info/{history_id}', response_model=ChatSession)
+@router.get('/chat_info/{chat_uid}', response_model=ChatSession)
 async def get_chat_info(
         session: SessionDep,
-        history_id: str,
+        chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    return get_chat(session, str(current_user.email), history_id)
+    return get_chat(session, str(current_user.email), chat_uid)
 
 
-@router.get('/chat/{history_id}')
+@router.get('/chat/{chat_uid}')
 async def load_chat(
-        history_id: str,
+        chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
     chat_message_history = SQLChatMessageHistory(
-        session_id=history_id,
+        session_id=chat_uid,
         connection=engine
     )
     return chat_message_history.messages
@@ -128,11 +128,11 @@ async def chat(
         request: ChatRequest,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    logger.debug(f'knowledge_base: {request.knowledge_base_name} session:{request.history_id}')
+    logger.debug(f'knowledge_base: {request.knowledge_base_name} session:{request.chat_uid}')
     logger.info(f'{current_user.username}: {request.message}')
 
     chat_message_history = SQLChatMessageHistory(
-        session_id=request.history_id,
+        session_id=request.chat_uid,
         connection=engine
     )
 
@@ -140,7 +140,7 @@ async def chat(
         # 发送模型加载状态
         yield SSEMessage(
             event=ChatEventType.STATUS,
-            data="正在加载模型..."
+            data='正在加载模型...'
         ).to_sse()
 
         await asyncio.sleep(0.1)  # 添加小延迟
@@ -153,7 +153,7 @@ async def chat(
         # 发送文档检索状态
         yield SSEMessage(
             event=ChatEventType.STATUS,
-            data="正在检索相关文档..."
+            data='正在检索相关文档...'
         ).to_sse()
 
         await asyncio.sleep(0.1)  # 添加小延迟
@@ -176,7 +176,7 @@ async def chat(
         # 发送生成回答状态
         yield SSEMessage(
             event=ChatEventType.STATUS,
-            data="正在生成回答..."
+            data='正在生成回答...'
         ).to_sse()
 
         chain = rag_chat(request.message, docs)

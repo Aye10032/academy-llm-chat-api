@@ -8,18 +8,18 @@ from app.models import ChatSessionTable
 def get_chat_list(
         session: Session,
         email: str,
-        knowledge_base_name: str
+        parent_uid: str
 ) -> Optional[ChatSessionTable]:
     statement = (select(ChatSessionTable)
                  .where(ChatSessionTable.user_email == email)
-                 .where(ChatSessionTable.knowledge_base_name == knowledge_base_name))
+                 .where(ChatSessionTable.parent_uid == parent_uid))
     return session.exec(statement).all()
 
 
-def get_chat(session: Session, email: str, history_id: str) -> Optional[ChatSessionTable]:
+def get_chat(session: Session, email: str, chat_uid: str) -> Optional[ChatSessionTable]:
     statement = (select(ChatSessionTable)
                  .where(ChatSessionTable.user_email == email)
-                 .where(ChatSessionTable.history_id == history_id))
+                 .where(ChatSessionTable.chat_uid == chat_uid))
     return session.exec(statement).first()
 
 

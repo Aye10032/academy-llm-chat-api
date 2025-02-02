@@ -11,8 +11,8 @@ class KBExistError(ValueError):
     pass
 
 
-def get_knowledge_base(session: Session, table_name: str):
-    statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.table_name == table_name)
+def get_knowledge_base(session: Session, uid: str):
+    statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.uid == uid)
     return session.exec(statement).first()
 
 
@@ -31,13 +31,11 @@ def insert_knowledge_base(session: Session, knowledge_base: KnowledgeBaseTable):
         else:
             raise e
 
-    logger.info(f'新增数据 {KnowledgeBaseTable.__tablename__}:{knowledge_base.table_name}')
-
 
 def update_knowledge_base(
-        session: Session, table_name: str, kb: KnowledgeBaseUpdate
+        session: Session, uid: str, kb: KnowledgeBaseUpdate
 ) -> KnowledgeBaseTable:
-    db_kb = get_knowledge_base(session, table_name)
+    db_kb = get_knowledge_base(session, uid)
     if not db_kb:
         raise HTTPException(status_code=404, detail='用户不存在！')
 
@@ -49,11 +47,11 @@ def update_knowledge_base(
     return db_kb
 
 
-def delete_knowledge_base(session: Session, table_name: str):
-    statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.table_name == table_name)
+def delete_knowledge_base(session: Session, uid: str):
+    statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.uid == uid)
     results = session.exec(statement)
     kb = results.first()
     if kb:
-        logger.info(f'删除数据 {KnowledgeBaseTable.__tablename__}:{table_name}')
+        logger.info(f'删除数据 {KnowledgeBaseTable.__tablename__}:{kb.table_name}')
         session.delete(kb)
         session.commit()

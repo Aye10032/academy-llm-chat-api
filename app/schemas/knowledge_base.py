@@ -5,6 +5,7 @@ from sqlmodel import SQLModel, Field
 
 
 class KnowledgeBase(SQLModel):
+    uid: str = Field(unique=True)
     table_name: str = Field(unique=True)
     table_title: str = ''
     description: str = ''
@@ -17,6 +18,6 @@ class KnowledgeBase(SQLModel):
 class KnowledgeBaseUpdate(SQLModel):
     table_title: Optional[str] = None
     description: Optional[str] = None
-    create_time: Optional[datetime] = None
     last_update: Optional[datetime] = None
+    is_public: bool = True
     is_active: Optional[bool] = None

@@ -6,6 +6,7 @@ import sys
 from argparse import Namespace
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from loguru import logger
 from tqdm import tqdm
@@ -106,6 +107,7 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
         now_time = datetime.now()
 
         knowledge_base = KnowledgeBaseTable(
+            uid=str(uuid4()),
             table_name=collection_name,
             table_title=collection_title,
             description=collection_desc,
