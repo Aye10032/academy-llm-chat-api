@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from app.core.config import get_settings
-from app.api.v1.endpoints import auth, rag, user
+from app.api.v1.endpoints import auth, rag, user, write
 from app.db.session import create_db_and_tables
 from app.utils.logger import init_logging
 
@@ -27,6 +27,7 @@ app = FastAPI(
 app.include_router(auth.router, prefix='/api/v1/auth', tags=['auth'])
 app.include_router(user.router, prefix='/api/v1/user', tags=['user'])
 app.include_router(rag.router, prefix='/api/v1/rag', tags=['rag'])
+app.include_router(write.router, prefix='api/v1/write', tags=['write'])
 
 
 def main() -> None:
