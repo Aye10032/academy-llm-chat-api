@@ -27,7 +27,7 @@ app = FastAPI(
 app.include_router(auth.router, prefix='/api/v1/auth', tags=['auth'])
 app.include_router(user.router, prefix='/api/v1/user', tags=['user'])
 app.include_router(rag.router, prefix='/api/v1/rag', tags=['rag'])
-app.include_router(write.router, prefix='api/v1/write', tags=['write'])
+app.include_router(write.router, prefix='/api/v1/write', tags=['write'])
 
 
 def main() -> None:

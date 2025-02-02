@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import HTTPException
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
@@ -11,17 +13,17 @@ class KBExistError(ValueError):
     pass
 
 
-def get_knowledge_base(session: Session, uid: str):
+def get_knowledge_base(session: Session, uid: str) -> Optional[KnowledgeBaseTable]:
     statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.uid == uid)
     return session.exec(statement).first()
 
 
-def get_knowledge_bases(session: Session, offset: int, limit: int):
+def get_knowledge_bases(session: Session, offset: int, limit: int) -> list[KnowledgeBaseTable]:
     statement = select(KnowledgeBaseTable).offset(offset).limit(limit)
     return session.exec(statement).all()
 
 
-def insert_knowledge_base(session: Session, knowledge_base: KnowledgeBaseTable):
+def insert_knowledge_base(session: Session, knowledge_base: KnowledgeBaseTable) -> None:
     try:
         session.add(knowledge_base)
         session.commit()

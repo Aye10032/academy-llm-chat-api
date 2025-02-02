@@ -12,15 +12,15 @@ from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
 from app.core.security import get_current_active_user
-from app.crud.chat_session import insert_chat, get_chat_list, get_chat
-from app.crud.knowledge_base import get_knowledge_bases
+from app.crud.chat_session import insert_chat, get_chat_list, get_chat, update_chat
+from app.crud.knowledge_base import get_knowledge_bases, get_knowledge_base
 from app.crud.user import update_user
 from app.db.session import SessionDep, engine
 from app.models import UserTable, ChatSessionTable
-from app.schemas.chat_session import ChatSession
+from app.schemas.chat_session import ChatSession, ChatSessionUpdate
 from app.schemas.knowledge_base import KnowledgeBase
 from app.schemas.user import UserUpdate
-from llm.core.chat import rag_chat
+from llm.core.chain import rag_chain, conclude_chat
 from llm.core.model import load_embedding, load_reranker
 from llm.rag.retriever import base_retriever
 from llm.rag.storage import get_vector_db, get_doc_db
@@ -28,7 +28,7 @@ from llm.rag.storage import get_vector_db, get_doc_db
 
 class ChatRequest(BaseModel):
     message: str
-    knowledge_base_name: str
+    knowledge_base_uid: str
     chat_uid: str
 
 
@@ -82,7 +82,7 @@ async def get_chats(
     return get_chat_list(session, str(current_user.email), knowledge_base_uid)
 
 
-@router.patch('/chat/{knowledge_base_uid}', description='在对应知识库下新建对话')
+@router.patch('/new_chat/{knowledge_base_uid}', description='在对应知识库下新建对话')
 async def add_new_chat(
         session: SessionDep,
         knowledge_base_uid: str,
@@ -107,7 +107,7 @@ async def get_chat_info(
         chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    return get_chat(session, str(current_user.email), chat_uid)
+    return get_chat(session, chat_uid)
 
 
 @router.get('/chat/{chat_uid}')
@@ -128,13 +128,15 @@ async def chat(
         request: ChatRequest,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    logger.debug(f'knowledge_base: {request.knowledge_base_name} session:{request.chat_uid}')
-    logger.info(f'{current_user.username}: {request.message}')
-
     chat_message_history = SQLChatMessageHistory(
         session_id=request.chat_uid,
         connection=engine
     )
+    knowledge_base = get_knowledge_base(session, request.knowledge_base_uid)
+    table_name = knowledge_base.table_name
+
+    logger.debug(f'knowledge_base: {table_name} session:{request.chat_uid}')
+    logger.info(f'{current_user.username}: {request.message}')
 
     async def generate():
         # 发送模型加载状态
@@ -147,8 +149,8 @@ async def chat(
 
         embedding = load_embedding()
         reranker = load_reranker()
-        vec_db = get_vector_db(request.knowledge_base_name, embedding, db_name='llm_chat')
-        doc_db = get_doc_db(request.knowledge_base_name)
+        vec_db = get_vector_db(table_name, embedding, db_name='llm_chat')
+        doc_db = get_doc_db(table_name)
 
         # 发送文档检索状态
         yield SSEMessage(
@@ -179,7 +181,7 @@ async def chat(
             data='正在生成回答...'
         ).to_sse()
 
-        chain = rag_chat(request.message, docs)
+        chain = rag_chain()
         full_response = ''
 
         async for chunk in chain.astream({
@@ -198,11 +200,28 @@ async def chat(
         chat_message_history.add_user_message(request.message)
         chat_message_history.add_ai_message(full_response)
 
+    async def generate_summary():
+        conclude = conclude_chat(chat_message_history)
+        now_time = datetime.now()
+        update_chat(
+            session,
+            request.chat_uid,
+            ChatSessionUpdate(
+                description=conclude.content,
+                update_time=now_time
+            )
+        )
+
+    # 自动生成总结
+    chat_info = get_chat(session, request.chat_uid)
+    if chat_info.description == '新建对话':
+        asyncio.create_task(generate_summary())
+
     # 更新用户信息
     update_user(
         session,
         str(current_user.email),
-        UserUpdate(last_knowledge_base=request.knowledge_base_name)
+        UserUpdate(last_knowledge_base=request.knowledge_base_uid)
     )
 
     return StreamingResponse(
