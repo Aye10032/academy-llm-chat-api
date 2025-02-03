@@ -1,5 +1,3 @@
-from typing import Optional
-
 from sqlmodel import Session, select
 
 from app.models import WriteProjectTable
@@ -8,7 +6,7 @@ from app.models import WriteProjectTable
 def get_project_list(
         session: Session,
         email: str,
-) -> Optional[WriteProjectTable]:
+) -> list[WriteProjectTable]:
     statement = select(WriteProjectTable).where(WriteProjectTable.user_email == email)
     return session.exec(statement).all()
 
