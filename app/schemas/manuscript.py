@@ -2,7 +2,8 @@ from sqlmodel import SQLModel
 
 
 class Manuscript(SQLModel):
+    uid: str
     name: str
-    project: str
+    project_uid: str
+    content: str
     version: int
-    is_draft: bool = False
