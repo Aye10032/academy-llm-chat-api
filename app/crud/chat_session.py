@@ -9,11 +9,9 @@ from app.schemas.chat_session import ChatSessionUpdate
 
 def get_chat_list(
         session: Session,
-        email: str,
         parent_uid: str
 ) -> Optional[ChatSessionTable]:
     statement = (select(ChatSessionTable)
-                 .where(ChatSessionTable.user_email == email)
                  .where(ChatSessionTable.parent_uid == parent_uid))
     return session.exec(statement).all()
 
@@ -24,9 +22,13 @@ def get_chat(session: Session, chat_uid: str) -> Optional[ChatSessionTable]:
     return session.exec(statement).first()
 
 
-def insert_chat(session: Session, chat_session: ChatSessionTable) -> None:
+def insert_chat(
+        session: Session, chat_session: ChatSessionTable
+) -> ChatSessionTable:
     session.add(chat_session)
     session.commit()
+    session.refresh(chat_session)
+    return chat_session
 
 
 def update_chat(

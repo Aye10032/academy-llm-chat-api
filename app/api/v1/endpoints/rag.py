@@ -69,17 +69,7 @@ async def get_chats(
         knowledge_base_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    """返回用户在对应知识库下的对话列表
-
-    Args:
-        session: 数据库连接会话
-        knowledge_base_uid: 所属知识库的uid
-        current_user:
-
-    Returns:
-
-    """
-    return get_chat_list(session, str(current_user.email), knowledge_base_uid)
+    return get_chat_list(session, knowledge_base_uid)
 
 
 @router.patch('/new_chat/{knowledge_base_uid}', description='在对应知识库下新建对话')
@@ -97,7 +87,7 @@ async def add_new_chat(
         create_time=now_time,
         update_time=now_time
     )
-    insert_chat(session, new_chat)
+    new_chat = insert_chat(session, new_chat)
     return new_chat.chat_uid
 
 
