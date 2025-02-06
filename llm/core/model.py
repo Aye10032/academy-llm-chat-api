@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from typing import Any, Optional, Union, Sequence
 
 import httpx
@@ -16,6 +15,14 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from torch import Tensor
 from tqdm import tqdm
+from transformers import (
+    PreTrainedTokenizerFast,
+    AutoTokenizer,
+    AutoModel,
+    PreTrainedModel,
+    AutoModelForSequenceClassification,
+    AutoModelForCausalLM
+)
 
 from app.core.config import get_settings
 from app.utils.cache import cache_model
@@ -28,6 +35,7 @@ llm_cfg = get_settings().llm
 
 
 class BgeM3Embeddings(BaseModel, Embeddings):
+    """Bge M3 Embedding模型"""
     bge_model_name: str = 'BAAI/bge-m3'
     bge_tokenizer: Any = None
     bge_model: Any = None
@@ -57,20 +65,6 @@ class BgeM3Embeddings(BaseModel, Embeddings):
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-
-        try:
-            from transformers import (
-                AutoTokenizer,
-                AutoModel,
-                PreTrainedTokenizerFast,
-                PreTrainedModel,
-            )
-
-        except ImportError as exc:
-            raise ImportError(
-                'Could not import transformers python package. '
-                'Please install it with `pip install transformers`.'
-            ) from exc
 
         if self.local_load:
             try:
@@ -152,18 +146,19 @@ class BgeM3Embeddings(BaseModel, Embeddings):
         return all_dense_embeddings
 
     def embed_query(self, text: str) -> list[float]:
-        text = text.replace("\n", " ")
+        text = text.replace('\n', ' ')
         embedding = self.encode(text, **self.encode_kwargs)
         return embedding.tolist()
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        texts = [t.replace("\n", " ") for t in texts]
+        texts = [t.replace('\n', ' ') for t in texts]
         embeddings = self.encode(texts, **self.encode_kwargs)
 
         return embeddings.tolist()
 
 
 class BgeReranker(BaseModel):
+    """BGE Reranker V2-M3模型"""
     bge_model_name: str = 'BAAI/bge-reranker-v2-m3'
     bge_tokenizer: Any = None
     bge_model: Any = None
@@ -194,20 +189,6 @@ class BgeReranker(BaseModel):
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-
-        try:
-            from transformers import (
-                AutoTokenizer,
-                AutoModelForSequenceClassification,
-                PreTrainedTokenizerFast,
-                PreTrainedModel,
-            )
-
-        except ImportError as exc:
-            raise ImportError(
-                'Could not import transformers python package. '
-                'Please install it with `pip install transformers`.'
-            ) from exc
 
         if self.local_load:
             try:
@@ -298,7 +279,10 @@ class BgeReranker(BaseModel):
             else:
                 batch_pairs = sentence_pairs[i:i + 10]
 
-            batch_scores = self.compute_score(batch_pairs, **self.encode_kwargs)
+            batch_size: int = self.encode_kwargs.get('batch_size', 256)
+            max_length: int = self.encode_kwargs.get('max_length', 512)
+            normalize: bool = self.encode_kwargs.get('normalize', False)
+            batch_scores = self.compute_score(batch_pairs, batch_size, max_length, normalize)
             rerank_scores.extend(batch_scores)
 
         rerank_results = list(zip(rerank_scores, documents))
@@ -323,6 +307,7 @@ class BgeReranker(BaseModel):
 
 
 class ReaderLM(BaseModel):
+    """JINA HTML转markdown小模型"""
     jina_model_name: str
     jina_tokenizer: Any = None
     jina_model: Any = None
@@ -350,20 +335,6 @@ class ReaderLM(BaseModel):
 
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-
-        try:
-            from transformers import (
-                AutoTokenizer,
-                AutoModelForCausalLM,
-                PreTrainedTokenizerFast,
-                PreTrainedModel,
-            )
-
-        except ImportError as exc:
-            raise ImportError(
-                'Could not import transformers python package. '
-                'Please install it with `pip install transformers`.'
-            ) from exc
 
         transformers.utils.logging.enable_progress_bar()
 
@@ -538,9 +509,10 @@ def load_gpt4o() -> ChatOpenAI:
 
 def load_gpt4o_mini() -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
+        http_client = httpx.Client(proxy=get_settings().server.network.PROXY)
         llm = ChatOpenAI(
             model_name='gpt-4o-mini',
-            openai_proxy=get_settings().server.network.PROXY,
+            http_client=http_client,
             temperature=0.4,
             openai_api_key=llm_cfg.openai.API_KEY
         )
