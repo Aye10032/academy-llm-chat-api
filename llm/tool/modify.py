@@ -1,0 +1,59 @@
+from typing import Any, Optional, Type
+
+from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool
+from langchain_openai import ChatOpenAI
+from pydantic import model_validator, BaseModel, Field
+
+from llm.core.model import load_gpt4o
+from llm.core.template import MODIFY_SYSTEM_ZH
+
+
+class ModifierInput(BaseModel):
+    query: str = Field(description='具体的修改需求')
+    current_text: str = Field(description='待修改的原始文本，这会在后续调用中由使用者手动给出，你只需返回空字符占位即可', default='')
+
+
+class Modification(BaseModel):
+    """具体的修改内容，对于每一处修改均需要给出简单的修改理由"""
+    original: str = Field(description='原文中需要修改的原句')
+    modified: str = Field(description='修改后的句子')
+    explanation: str = Field(description='做出此修改的原因')
+
+
+class OptimizerOutput(BaseModel):
+    """你对于原始文本的改动意见"""
+    modifies: list[Modification] = Field(description='修改意见列表，其中每一条修改意见都需要满足规定的格式')
+
+
+class Modifier(BaseTool):
+    name: str = 'modifier'
+    description: str = '如果用户没有指定具体使用哪个知识库，则调用此工具分析问题并得到合适的数据库'
+    args_schema: Type[BaseModel] = ModifierInput
+    return_direct: bool = False
+    handle_tool_error: bool = True
+
+    llm: Optional[ChatOpenAI] = None
+
+    @model_validator(mode='after')
+    def init_llm(self):
+        if self.llm is None:
+            self.llm = load_gpt4o()
+
+        return self
+
+    def _run(self, query: str, current_text: str, config: Optional[RunnableConfig] = None) -> Any:
+        llm = self.llm.with_structured_output(OptimizerOutput, include_raw=True, method='function_calling')
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(content=MODIFY_SYSTEM_ZH),
+            ('human', '## 待修改的原始文本\n{current_text}\n\n## 用户的修改要求\n{user_input}')
+        ])
+        chain = prompt | llm
+        result: OptimizerOutput = chain.invoke({
+            'current_text': current_text,
+            'user_input': query
+        }, config)
+
+        return result

@@ -2,38 +2,42 @@ import operator
 
 from typing import Annotated, Literal, Optional
 
-from langchain_core.messages import SystemMessage, ToolMessage, ToolCall, AIMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, ToolMessage, ToolCall, AIMessage, AnyMessage, HumanMessage, trim_messages
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.documents import Document
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, tool
 from langchain_openai import ChatOpenAI
 from langgraph.constants import START
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
-from langgraph.graph import StateGraph, END, MessagesState
+from langgraph.graph import StateGraph, END, MessagesState, add_messages
 from pydantic import BaseModel, model_validator, Field
 from tqdm import tqdm
 
 from llm.core.model import load_deepseek_v3, load_reranker, load_gpt4o
-from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH
+from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH
 from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
 from llm.schemas.tokens import UsageMetadata
+from llm.tool.modify import Modifier, OptimizerOutput
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
 from llm.tool.search import WebSearchTool
 
 
-class SearchAgentState(MessagesState):
-    origin_question: str
-    search_results: Annotated[list[Document], operator.add]
+class BaseAgentState(MessagesState):
     input_token: Annotated[int, operator.add]
     cached_input_token: Annotated[int, operator.add]
     output_token: Annotated[int, operator.add]
 
 
-class SearchAgent(BaseModel):
-    use_web: bool = True
+class KnowledgeManageAgentState(BaseAgentState):
+    documents: Annotated[list[Document], operator.add]
 
-    llm: Optional[ChatOpenAI] = None
+
+class KnowledgeManageAgent(BaseModel):
+    use_web: bool = True
+    available_knowledge_bases: list[str] = Field(default_factory=list)
+    llm: ChatOpenAI
 
     tools: list[BaseTool] = Field(default_factory=list)
     select_tool: Optional[SelectKnowledgeBase] = None
@@ -42,9 +46,6 @@ class SearchAgent(BaseModel):
 
     @model_validator(mode='after')
     def setup_tools(self):
-        if self.llm is None:
-            self.llm = load_gpt4o()
-
         self.select_tool = SelectKnowledgeBase(llm=self.llm)
         self.rag_search_tool = RAGSearchTool()
         self.web_search_tool = WebSearchTool()
@@ -63,7 +64,7 @@ class SearchAgent(BaseModel):
 
         return self
 
-    def search_agent(self, state: SearchAgentState):
+    def search_router(self, state: KnowledgeManageAgentState):
         llm_with_tool = self.llm.bind_tools(self.tools, tool_choice='required')
         messages = state['messages']
         response: AIMessage = llm_with_tool.invoke(messages)
@@ -76,7 +77,7 @@ class SearchAgent(BaseModel):
             'output_token': token_usage.output_tokens,
         }
 
-    def choose_tool(self, state: SearchAgentState) -> Literal['web_tool', 'rag_tool']:
+    def choose_tool(self, state: KnowledgeManageAgentState) -> Literal['web_tool', 'rag_tool']:
         messages = state['messages']
         tool_calls = messages[-1].tool_calls
 
@@ -86,7 +87,7 @@ class SearchAgent(BaseModel):
         else:
             return 'rag_tool'
 
-    def rag_tool_node(self, state: SearchAgentState) -> Command[Literal['search_agent', 'search_conclude']]:
+    def rag_tool_node(self, state: KnowledgeManageAgentState) -> Command[Literal['search_agent', 'search_conclude']]:
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
         tool_call_id = tool_call['id']
@@ -150,7 +151,7 @@ class SearchAgent(BaseModel):
             goto='search_agent'
         )
 
-    def web_tool_node(self, state: SearchAgentState):
+    def web_tool_node(self, state: KnowledgeManageAgentState):
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
 
@@ -164,13 +165,14 @@ class SearchAgent(BaseModel):
 
         return {'search_results': all_web_docs}
 
-    def search_conclude_node(self, state: SearchAgentState):
+    def search_conclude_node(self, state: KnowledgeManageAgentState):
+        origin_question = state['messages'][-1].content
         reranker = load_reranker()
-        clean_output = reranker.compress_documents(state['search_results'], state['origin_question'])
+        clean_output = reranker.compress_documents(state['search_results'], origin_question)
 
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(CONCLUDE_DOCUMENTS_SYSTEM_ZH),
-            ('human', '待总结的文档片段：\n\n{doc_str}')
+            ('human', CONCLUDE_DOCUMENTS_HUMAN_ZH)
         ])
         chain = prompt | self.llm
         response = chain.invoke({
@@ -185,8 +187,8 @@ class SearchAgent(BaseModel):
             'output_token': token_usage.output_tokens,
         }
 
-    def build(self):
-        searcher = StateGraph(SearchAgentState)
+    def build(self) -> CompiledStateGraph:
+        searcher = StateGraph(KnowledgeManageAgentState)
         searcher.add_node('search_agent', self.search_agent)
         searcher.add_node('rag_tool', self.rag_tool_node)
         searcher.add_node('web_tool', self.web_tool_node)
@@ -200,11 +202,208 @@ class SearchAgent(BaseModel):
         return searcher.compile()
 
 
+class OptimizerAgentState(BaseAgentState):
+    current_text: str
+
+
+class OptimizerAgent(BaseModel):
+    llm: ChatOpenAI
+
+    modifier: Optional[Modifier] = None
+
+    @model_validator(mode='after')
+    def setup_tools(self):
+        self.modifier = Modifier(llm=self.llm)
+
+        return self
+
+    def optimizer_route_node(self, state: OptimizerAgentState):
+        tools = [self.modifier]
+        llm_with_tool = self.llm.bind_tools(tools)
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(content=OPTIMIZER_SYSTEM_ZH),
+            MessagesPlaceholder(variable_name='history')
+        ])
+
+        chain = prompt | llm_with_tool
+        response = chain.invoke({'history': state['messages']})
+
+        token_usage = UsageMetadata.create(response.usage_metadata)
+        return {
+            'messages': [response],
+            'input_token': token_usage.input_tokens,
+            'cached_input_token': token_usage.input_token_details.cache_read,
+            'output_token': token_usage.output_tokens,
+        }
+
+    def optimizer_route(self, state: OptimizerAgentState) -> Literal['modifier', '__end__']:
+        message: AIMessage = state['messages'][-1]
+
+        if message.tool_calls:
+            tool_call = message.tool_calls[0]
+
+            if tool_call['name'] == self.modifier.name:
+                return 'modifier'
+
+        return '__end__'
+
+    def modify_node(self, state: OptimizerAgentState) -> Command[Literal['router']]:
+        message: AIMessage = state['messages'][-1]
+        tool_call = message.tool_calls[0]
+        tool_call_id = tool_call['id']
+
+        response = self.modifier.invoke({
+            'query': tool_call['args']['query'],
+            'current_text': state['current_text']
+        })
+        modify_result: OptimizerOutput = response['parsed']
+        token_usage = UsageMetadata.create(response['raw'].usage_metadata)
+
+        return Command(
+            update={
+                'messages': [
+                    ToolMessage(f'我已经完成了修改：{str(modify_result.model_dump())}', tool_call_id=tool_call_id)
+                ],
+                'input_token': token_usage.input_tokens,
+                'cached_input_token': token_usage.input_token_details.cache_read,
+                'output_token': token_usage.output_tokens,
+            }, goto='router'
+        )
+
+    def build(self) -> CompiledStateGraph:
+        graph = StateGraph(OptimizerAgentState)
+        graph.add_node('router', self.optimizer_route_node)
+        graph.add_node('modifier', self.modify_node)
+
+        graph.add_edge(START, 'router')
+        graph.add_conditional_edges('router', self.optimizer_route)
+
+        return graph.compile()
+
+
 class MainAgentState(MessagesState):
-    origin_question: str
-    search_results: Annotated[list[Document], operator.add]
+    current_text: str
+    chat_history: Annotated[list[AnyMessage], add_messages]
+
     input_token: Annotated[int, operator.add]
     cached_input_token: Annotated[int, operator.add]
     output_token: Annotated[int, operator.add]
+
+
 class MainAgent(BaseModel):
-    pass
+    llm: Optional[ChatOpenAI] = None
+    use_web: bool = False
+
+    @model_validator(mode='after')
+    def setup_llm(self):
+        if self.llm is None:
+            self.llm = load_gpt4o()
+
+    @staticmethod
+    @tool
+    def generate_task():
+        """如果你需要从头开始撰写全新的文本内容，或者进资料搜索，请调用此工具。
+        它能够基于主题、关键词或具体要求搜索相关资料，并从头生成原创内容，适用于文章、故事、报告等各类写作需求。
+        """
+        return
+
+    @staticmethod
+    @tool
+    def optimize_task():
+        """如果你需要在现成的文本基础上进行修改、润色、优化或重构，请调用此工具。
+        这个工具不会再引入新的知识，只会忠实的利用现有的文本进行修改。
+        它将帮助你精细调整句式、语法、结构，提升文本的清晰度、流畅度和表达效果，适合需要修改、修订或增强已有文本的任务。
+        """
+        return
+
+    def main_route_node(
+            self, state: MainAgentState
+    ):
+        tools = [self.generate_task, self.optimize_task]
+        llm_with_tool = self.llm.bind_tools(tools)
+
+        # 所有对话以 chat_history 传入
+        if not state['messages']:
+            user_question = state['chat_history'][-1]
+            assert isinstance(HumanMessage, user_question)
+
+            state['messages'] = [user_question]
+
+        response = llm_with_tool.invoke(state['messages'])
+        token_usage = UsageMetadata.create(response.usage_metadata)
+
+        return {
+            'messages': [response],
+            'input_token': token_usage.input_tokens,
+            'cached_input_token': token_usage.input_token_details.cache_read,
+            'output_token': token_usage.output_tokens,
+        }
+
+    @staticmethod
+    def main_route(state: MainAgentState) -> Literal['text_generator', 'text_optimizer', '__end__']:
+        message: AIMessage = state['messages'][-1]
+
+        if state['current_text']:
+            return 'text_generator'
+
+        if message.tool_calls:
+            tool_call = message.tool_calls[0]
+
+            if tool_call['name'] == 'generate_task':
+                return 'text_generator'
+            elif tool_call['name'] == 'optimize_task':
+                return 'text_optimizer'
+
+        return '__end__'
+
+    def text_generator_agent(self, state: MainAgentState):
+
+        return {}
+
+    def knowledge_searcher(self, state: MainAgentState):
+        searcher = GeneratorAgent(llm=self.llm, use_web=self.use_web).build()
+        search_query = state['messages'][-1].content
+        output: GeneratorAgentState = searcher.invoke({
+            'messages': [HumanMessage(search_query)],
+            'origin_question': search_query
+        })
+        return {
+            'messages': [ToolMessage('')],
+            'input_token': output['input_token'],
+            'cached_input_token': output['cached_input_token'],
+            'output_token': output['output_token'],
+        }
+
+    def text_optimizer_agent(self, state: MainAgentState):
+        subgraph = OptimizerAgent().build()
+        message = trim_messages(
+            state['messages'],
+            strategy='last',
+            token_counter=len,
+            max_tokens=5,
+            start_on='human',
+            end_on=('ai', 'tool'),
+            include_system=False
+        )
+        response = subgraph.invoke({
+            'messages': message,
+            'current_text': state['current_text']
+        })
+        return Command(
+            update={
+
+            },
+            goto='router'
+        )
+
+    def build(self) -> CompiledStateGraph:
+        graph = StateGraph(MainAgentState)
+        graph.add_node('router', self.main_route_node)
+        graph.add_node('text_generator', self.text_generator_agent)
+        graph.add_node('text_optimizer', self.text_optimizer_agent)
+        graph.add_node('knowledge_searcher', self.knowledge_searcher)
+
+        graph.add_edge(START, 'router')
+        graph.add_conditional_edges('router', self.main_route)
+
+        return graph.compile()
