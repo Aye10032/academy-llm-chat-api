@@ -1,9 +1,25 @@
 """
 重写langchain的token_usage类，添加默认值
 """
-from typing import Optional, NotRequired, Dict, Any, Union
+from typing import Optional, Dict, Any, Union
 
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
+
+
+class Cost(BaseModel):
+    input_price: float
+    cached_price: float
+    output_price: float
+    is_usd: bool
+
+
+GPT_4O = Cost(input_price=2.5, cached_price=1.25, output_price=10, is_usd=True)
+GPT_4O_MINI = Cost(input_price=0.15, cached_price=0.075, output_price=0.6, is_usd=True)
+DEEPSEEK_V3 = Cost(input_price=2, cached_price=0.5, output_price=8, is_usd=True)
+DEEPSEEK_R1 = Cost(input_price=4, cached_price=1, output_price=16, is_usd=True)
+GLM_4_AIR = Cost(input_price=0.5, cached_price=0.5, output_price=0.5, is_usd=False)
+GLM_4_FLASH = Cost(input_price=0, cached_price=0, output_price=0, is_usd=False)
 
 
 class InputTokenDetails(BaseModel):
@@ -65,9 +81,8 @@ class UsageMetadata(BaseModel):
     """
 
     @classmethod
-    def create(cls, data: Optional[Union[Dict[str, Any], "UsageMetadata"]] = None) -> "UsageMetadata":
-        """
-        创建一个UsageMetadata实例，可以处理实际数据或None
+    def create(cls, data: Optional[Union[Dict[str, Any], 'UsageMetadata']] = None) -> 'UsageMetadata':
+        """创建一个UsageMetadata实例，可以处理实际数据或None
         
         Args:
             data: 可以是字典数据、UsageMetadata实例或None
@@ -78,3 +93,34 @@ class UsageMetadata(BaseModel):
         if data is None:
             return cls.model_construct()
         return cls.model_validate(data)
+
+    def calculate_cost(self, llm: ChatOpenAI) -> float:
+        """计算本次调用的费用
+
+        统一输出为人民币，若模型以美元计费，则以当前汇率进行转换
+
+        Args:
+            llm: 调用的ChatOpenAI格式大模型
+
+        Returns:
+            此次调用的总费用
+        """
+        if llm.model_name == 'gpt-4o-mini':
+            price = GPT_4O_MINI
+        elif llm.model_name == 'deepseek-chat':
+            price = DEEPSEEK_V3
+        elif llm.model_name == 'deepseek-reasoner':
+            price = DEEPSEEK_R1
+        elif llm.model_name == 'glm-4-flash':
+            price = GLM_4_FLASH
+        elif llm.model_name == 'glm-4-air':
+            price = GLM_4_AIR
+        else:
+            price = GPT_4O
+
+        cost = (self.input_token_details.cache_read * price.cached_price +
+                (self.input_tokens - self.input_token_details.cache_read) * price.input_price +
+                self.output_tokens * price.output_price) / 1000000
+        if price.is_usd:
+            return cost * 7.29
+        return cost
