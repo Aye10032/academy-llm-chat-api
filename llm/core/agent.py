@@ -14,7 +14,7 @@ from langgraph.graph import StateGraph, END, MessagesState, add_messages
 from pydantic import BaseModel, model_validator, Field
 from tqdm import tqdm
 
-from llm.core.model import load_deepseek_v3, load_reranker, load_gpt4o
+from llm.core.model import load_reranker, load_gpt4o
 from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH
 from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
@@ -25,9 +25,7 @@ from llm.tool.search import WebSearchTool
 
 
 class BaseAgentState(MessagesState):
-    input_token: Annotated[int, operator.add]
-    cached_input_token: Annotated[int, operator.add]
-    output_token: Annotated[int, operator.add]
+    price: Annotated[float, operator.add]
 
 
 class KnowledgeManageAgentState(BaseAgentState):
@@ -46,7 +44,7 @@ class KnowledgeManageAgent(BaseModel):
 
     @model_validator(mode='after')
     def setup_tools(self):
-        self.select_tool = SelectKnowledgeBase(llm=self.llm)
+        self.select_tool = SelectKnowledgeBase(llm=self.llm, available_knowledge_bases=self.available_knowledge_bases)
         self.rag_search_tool = RAGSearchTool()
         self.web_search_tool = WebSearchTool()
 
@@ -72,9 +70,7 @@ class KnowledgeManageAgent(BaseModel):
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
             'messages': [response],
-            'input_token': token_usage.input_tokens,
-            'cached_input_token': token_usage.input_token_details.cache_read,
-            'output_token': token_usage.output_tokens,
+            'price': token_usage.calculate_cost(self.llm)
         }
 
     def choose_tool(self, state: KnowledgeManageAgentState) -> Literal['web_tool', 'rag_tool']:
@@ -87,7 +83,7 @@ class KnowledgeManageAgent(BaseModel):
         else:
             return 'rag_tool'
 
-    def rag_tool_node(self, state: KnowledgeManageAgentState) -> Command[Literal['search_agent', 'search_conclude']]:
+    def rag_tool_node(self, state: KnowledgeManageAgentState) -> Command[Literal['search_router', 'search_conclude']]:
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
         tool_call_id = tool_call['id']
@@ -105,17 +101,13 @@ class KnowledgeManageAgent(BaseModel):
                             'messages': [
                                 ToolMessage('没有合适的向量数据库，向量数据库查询失败。', tool_call_id=tool_call_id)
                             ],
-                            'input_token': token_usage.input_tokens,
-                            'cached_input_token': token_usage.input_token_details.cache_read,
-                            'output_token': token_usage.output_tokens,
-                        }, goto='search_agent'
+                            'price': token_usage.calculate_cost(self.llm)
+                        }, goto='search_router'
                     )
                 else:
                     return Command(
                         update={
-                            'input_token': token_usage.input_tokens,
-                            'cached_input_token': token_usage.input_token_details.cache_read,
-                            'output_token': token_usage.output_tokens,
+                            'price': token_usage.calculate_cost(self.llm)
                         },
                         goto='search_conclude'
                     )
@@ -131,10 +123,8 @@ class KnowledgeManageAgent(BaseModel):
         if search_result or not self.use_web:
             return Command(
                 update={
-                    'search_results': search_result,
-                    'input_token': token_usage.input_tokens,
-                    'cached_input_token': token_usage.input_token_details.cache_read,
-                    'output_token': token_usage.output_tokens,
+                    'documents': search_result,
+                    'price': token_usage.calculate_cost(self.llm)
                 },
                 goto='search_conclude'
             )
@@ -144,11 +134,9 @@ class KnowledgeManageAgent(BaseModel):
                 'messages': [
                     ToolMessage('向量数据库查询失败', tool_call_id=tool_call_id)
                 ],
-                'input_token': token_usage.input_tokens,
-                'cached_input_token': token_usage.input_token_details.cache_read,
-                'output_token': token_usage.output_tokens,
+                'price': token_usage.calculate_cost(self.llm)
             },
-            goto='search_agent'
+            goto='search_router'
         )
 
     def web_tool_node(self, state: KnowledgeManageAgentState):
@@ -163,12 +151,12 @@ class KnowledgeManageAgent(BaseModel):
             _, docs = web_loader.load(url)
             all_web_docs.extend(docs)
 
-        return {'search_results': all_web_docs}
+        return {'documents': all_web_docs}
 
     def search_conclude_node(self, state: KnowledgeManageAgentState):
         origin_question = state['messages'][-1].content
         reranker = load_reranker()
-        clean_output = reranker.compress_documents(state['search_results'], origin_question)
+        clean_output = reranker.compress_documents(state['documents'], origin_question)
 
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(CONCLUDE_DOCUMENTS_SYSTEM_ZH),
@@ -176,26 +164,25 @@ class KnowledgeManageAgent(BaseModel):
         ])
         chain = prompt | self.llm
         response = chain.invoke({
+            'question': origin_question,
             'doc_str': format_docs(clean_output, 'zh')
         })
 
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
             'messages': [response],
-            'input_token': token_usage.input_tokens,
-            'cached_input_token': token_usage.input_token_details.cache_read,
-            'output_token': token_usage.output_tokens,
+            'price': token_usage.calculate_cost(self.llm)
         }
 
     def build(self) -> CompiledStateGraph:
         searcher = StateGraph(KnowledgeManageAgentState)
-        searcher.add_node('search_agent', self.search_agent)
+        searcher.add_node('search_router', self.search_router)
         searcher.add_node('rag_tool', self.rag_tool_node)
         searcher.add_node('web_tool', self.web_tool_node)
         searcher.add_node('search_conclude', self.search_conclude_node)
 
-        searcher.add_edge(START, 'search_agent')
-        searcher.add_conditional_edges('search_agent', self.choose_tool)
+        searcher.add_edge(START, 'search_router')
+        searcher.add_conditional_edges('search_router', self.choose_tool)
         searcher.add_edge('web_tool', 'search_conclude')
         searcher.add_edge('search_conclude', END)
 
@@ -231,9 +218,7 @@ class OptimizerAgent(BaseModel):
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
             'messages': [response],
-            'input_token': token_usage.input_tokens,
-            'cached_input_token': token_usage.input_token_details.cache_read,
-            'output_token': token_usage.output_tokens,
+            'price': token_usage.calculate_cost(self.llm)
         }
 
     def optimizer_route(self, state: OptimizerAgentState) -> Literal['modifier', '__end__']:
@@ -264,9 +249,7 @@ class OptimizerAgent(BaseModel):
                 'messages': [
                     ToolMessage(f'我已经完成了修改：{str(modify_result.model_dump())}', tool_call_id=tool_call_id)
                 ],
-                'input_token': token_usage.input_tokens,
-                'cached_input_token': token_usage.input_token_details.cache_read,
-                'output_token': token_usage.output_tokens,
+                'price': token_usage.calculate_cost(self.llm)
             }, goto='router'
         )
 
@@ -334,9 +317,7 @@ class MainAgent(BaseModel):
 
         return {
             'messages': [response],
-            'input_token': token_usage.input_tokens,
-            'cached_input_token': token_usage.input_token_details.cache_read,
-            'output_token': token_usage.output_tokens,
+            'price': token_usage.calculate_cost(self.llm)
         }
 
     @staticmethod
@@ -361,17 +342,16 @@ class MainAgent(BaseModel):
         return {}
 
     def knowledge_searcher(self, state: MainAgentState):
-        searcher = GeneratorAgent(llm=self.llm, use_web=self.use_web).build()
+        searcher = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web).build()
         search_query = state['messages'][-1].content
-        output: GeneratorAgentState = searcher.invoke({
+        output: KnowledgeManageAgentState = searcher.invoke({
             'messages': [HumanMessage(search_query)],
             'origin_question': search_query
         })
+
         return {
             'messages': [ToolMessage('')],
-            'input_token': output['input_token'],
-            'cached_input_token': output['cached_input_token'],
-            'output_token': output['output_token'],
+            'price': output['price']
         }
 
     def text_optimizer_agent(self, state: MainAgentState):

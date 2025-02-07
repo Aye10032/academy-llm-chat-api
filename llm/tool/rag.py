@@ -1,12 +1,10 @@
 from typing import Type, Optional
 
 from langchain.retrievers import MultiVectorRetriever
-from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.documents import Document
-from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import BaseTool, ToolException
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
@@ -14,8 +12,7 @@ from sqlmodel import Session
 
 from app.crud.knowledge_base import get_knowledge_bases
 from app.db.session import engine
-from app.utils.network import retry
-from llm.core.model import load_embedding, load_gpt4o, load_deepseek_v3, load_reranker
+from llm.core.model import load_embedding, load_gpt4o
 from llm.core.template import SELECT_KNOWLEDGE_BASE_SYSTEM_ZH
 from llm.rag.storage import get_vector_db, get_doc_db
 
@@ -38,6 +35,7 @@ class SelectKnowledgeBase(BaseTool):
     handle_tool_error: bool = True
 
     llm: Optional[ChatOpenAI] = None
+    available_knowledge_bases: list[str] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def init_llm(self):
@@ -50,10 +48,16 @@ class SelectKnowledgeBase(BaseTool):
         with Session(engine) as session:
             kb_list = get_knowledge_bases(session, 0, 20)
 
-        available_kbs = '\n=================\n'.join([
-            f'name: {kb.table_name}\ndescription: {kb.description}'
-            for kb in kb_list
-        ])
+        if self.available_knowledge_bases:
+            available_kbs = '\n=================\n'.join([
+                f'name: {kb.table_name}\ndescription: {kb.description}'
+                for kb in kb_list if kb in self.available_knowledge_bases
+            ])
+        else:
+            available_kbs = '\n=================\n'.join([
+                f'name: {kb.table_name}\ndescription: {kb.description}'
+                for kb in kb_list
+            ])
 
         llm = self.llm.with_structured_output(SelectKnowledgeBaseOutput, include_raw=True, method='function_calling')
         prompt = ChatPromptTemplate.from_messages([
