@@ -12,6 +12,9 @@ from app.schemas.knowledge_base import KnowledgeBaseUpdate
 class KBExistError(ValueError):
     pass
 
+def get_knowledge_base_by_name(session: Session, name: str) -> Optional[KnowledgeBaseTable]:
+    statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.table_name == name)
+    return session.exec(statement).first()
 
 def get_knowledge_base(session: Session, uid: str) -> Optional[KnowledgeBaseTable]:
     statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.uid == uid)

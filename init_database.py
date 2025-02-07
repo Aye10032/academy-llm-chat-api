@@ -14,7 +14,8 @@ from urllib3.exceptions import ResponseError
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.crud.knowledge_base import insert_knowledge_base, KBExistError, delete_knowledge_base, get_knowledge_base, update_knowledge_base
+from app.crud.knowledge_base import insert_knowledge_base, KBExistError, delete_knowledge_base, get_knowledge_base, update_knowledge_base, \
+    get_knowledge_base_by_name
 from app.crud.user import insert_user, UserExistError
 from app.db.session import get_simple_session, create_db_and_tables
 from app.models import UserTable, KnowledgeBaseTable
@@ -27,6 +28,7 @@ from llm.file_loader.loader import FileLoadError
 from llm.file_loader.pdf import PdfLoader, GrobidConnector
 from llm.rag.retriever import insert_chain
 from llm.rag.storage import create_vector_db, get_doc_db, fix_null_fields, get_vector_db
+from llm.schemas.markdown import SourceType
 
 logger.remove()
 handler_id = logger.add(sys.stderr, level='DEBUG')
@@ -80,15 +82,16 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
 
     # 创建知识库相关数据表
     collection_name = _get_collection_name()
-    if get_knowledge_base(session, collection_name) and not drop_old:
+    if get_knowledge_base_by_name(session, collection_name) and not drop_old:
         collection_lang = _get_collection_lang()
         collection_ext = _get_collection_ext()
+        uid = get_knowledge_base_by_name(session, collection_name).uid
 
         now_time = datetime.now()
         knowledge_base = KnowledgeBaseUpdate(
             last_update=now_time
         )
-        update_knowledge_base(session, collection_name, knowledge_base)
+        update_knowledge_base(session, uid, knowledge_base)
 
         # 初始化向量数据库
         embedding_model = load_embedding()
@@ -148,6 +151,8 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
     if drop_old:
         shutil.rmtree(os.path.join(output_path, collection_name))
 
+    os.makedirs('temp', exist_ok=True)
+
     if collection_ext == 'md':
         markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')  # pylint: disable=inconsistent-quotes
         md_path = os.path.join(output_path, collection_name, 'markdown')
@@ -160,7 +165,17 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
             if Path(md_file).exists():
                 continue
 
-            _, docs = md_loader.load(file)
+            meta, docs = md_loader.load(file)
+
+            if len(meta.source) > 1:
+                pdf_path = os.path.join(output_path, collection_name, 'pdf')
+                os.makedirs(pdf_path, exist_ok=True)
+                for source in md_loader.file_meta.source:
+                    if source.source_type == SourceType.PDF:
+                        pdf_file = os.path.join(pdf_path, Path(source.source_url).name)
+                        shutil.copyfile(source.source_url, pdf_file)
+                        source.source_url = pdf_file
+
             md_loader.save_md(md_file)
 
             # TODO 临时修复zilliz无法处理空值的问题
