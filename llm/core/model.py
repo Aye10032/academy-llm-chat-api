@@ -73,8 +73,13 @@ class BgeM3Embeddings(BaseModel, Embeddings):
             except EnvironmentError:
                 logger.warning('Load model from local fail. Download from huggingface...')
 
-                self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
-                self.bge_model = AutoModel.from_pretrained(self.bge_model_name)
+                if get_settings().server.network.USE_PROXY:
+                    k, v = get_settings().server.network.PROXY.split('://')
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name, proxies={k: v})
+                    self.bge_model = AutoModel.from_pretrained(self.bge_model_name, proxies={k: v})
+                else:
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
+                    self.bge_model = AutoModel.from_pretrained(self.bge_model_name)
 
                 # save to local
                 os.makedirs(self.local_path, exist_ok=True)
@@ -197,8 +202,13 @@ class BgeReranker(BaseModel):
             except EnvironmentError:
                 logger.warning('Load model from local fail. Download from huggingface...')
 
-                self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
-                self.bge_model = AutoModelForSequenceClassification.from_pretrained(self.bge_model_name)
+                if get_settings().server.network.USE_PROXY:
+                    k, v = get_settings().server.network.PROXY.split('://')
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name, proxies={k: v})
+                    self.bge_model = AutoModelForSequenceClassification.from_pretrained(self.bge_model_name, proxies={k: v})
+                else:
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
+                    self.bge_model = AutoModelForSequenceClassification.from_pretrained(self.bge_model_name)
 
                 # save to local
                 os.makedirs(self.local_path, exist_ok=True)
@@ -345,9 +355,13 @@ class ReaderLM(BaseModel):
             except EnvironmentError:
                 logger.warning('Load model from local fail. Download from huggingface...')
 
-                logger.debug(self.jina_model_name)
-                self.jina_tokenizer = AutoTokenizer.from_pretrained(self.jina_model_name, force_download=True)
-                self.jina_model = AutoModelForCausalLM.from_pretrained(self.jina_model_name, force_download=True)
+                if get_settings().server.network.USE_PROXY:
+                    k, v = get_settings().server.network.PROXY.split('://')
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.jina_model_name, proxies={k: v})
+                    self.bge_model = AutoModelForCausalLM.from_pretrained(self.jina_model_name, proxies={k: v})
+                else:
+                    self.jina_tokenizer = AutoTokenizer.from_pretrained(self.jina_model_name, force_download=True)
+                    self.jina_model = AutoModelForCausalLM.from_pretrained(self.jina_model_name, force_download=True)
 
                 # save to local
                 os.makedirs(self.local_path, exist_ok=True)
