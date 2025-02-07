@@ -14,8 +14,13 @@ from urllib3.exceptions import ResponseError
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.crud.knowledge_base import insert_knowledge_base, KBExistError, delete_knowledge_base, get_knowledge_base, update_knowledge_base, \
+from app.crud.knowledge_base import (
+    insert_knowledge_base,
+    KBExistError,
+    delete_knowledge_base,
+    update_knowledge_base,
     get_knowledge_base_by_name
+)
 from app.crud.user import insert_user, UserExistError
 from app.db.session import get_simple_session, create_db_and_tables
 from app.models import UserTable, KnowledgeBaseTable
@@ -76,7 +81,12 @@ def _get_collection_ext() -> str:
     return user_input if user_input else 'md'
 
 
-def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
+def init_knowledge_base(
+        file_path: str,
+        output_path: str,
+        drop_old: bool,
+        abstract_word: str
+):
     logger.info(f'覆盖:{drop_old}')
     session = get_simple_session()
 
@@ -158,7 +168,7 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
         md_path = os.path.join(output_path, collection_name, 'markdown')
         os.makedirs(md_path, exist_ok=True)
 
-        md_loader = MarkdownLoader(keep_title=False)
+        md_loader = MarkdownLoader(keep_title=False, abstract_key=abstract_word)
         logger.info('建立文档索引')
         for file in tqdm(markdown_list, total=len(markdown_list)):
             md_file = os.path.join(md_path, Path(file).name)
@@ -173,7 +183,8 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
                 for source in md_loader.file_meta.source:
                     if source.source_type == SourceType.PDF:
                         pdf_file = os.path.join(pdf_path, Path(source.source_url).name)
-                        shutil.copyfile(source.source_url, pdf_file)
+                        origin_file = os.path.join(file_path, source.source_url.lstrip('./'))
+                        shutil.copyfile(origin_file, pdf_file)
                         source.source_url = pdf_file
 
             md_loader.save_md(md_file)
@@ -227,7 +238,12 @@ def load_args(args: Namespace):
         init_user(setting.server.INIT_USER, setting.server.INIT_PASSWORD)
 
     if origin_path := args.knowledge_base:
-        init_knowledge_base(origin_path, setting.retriever.knowledge_base.STORE_PATH, args.drop_old)
+        init_knowledge_base(
+            origin_path,
+            setting.retriever.knowledge_base.STORE_PATH,
+            args.drop_old,
+            args.abstract_word
+        )
 
 
 if __name__ == '__main__':
@@ -246,6 +262,13 @@ if __name__ == '__main__':
         type=str,
         default='',
         help='创建知识库。若传入待建库文件所在路径，则会进行知识库文件的初始化。目前仅支持一次性处理单一类型的文件'
+    )
+    parser.add_argument(
+        '--abstract_word',
+        '-a',
+        type=str,
+        default='abstract',
+        help='加载文章中用于作为摘要片段的标题'
     )
     parser.add_argument(
         '--drop_old',

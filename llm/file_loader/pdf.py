@@ -1,4 +1,3 @@
-import random
 import re
 from enum import StrEnum
 from typing import Literal, Any
@@ -13,8 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 from urllib3.exceptions import ResponseError
 
-from app.core.config import GrobidSetting
-from app.utils.network import retry
+from app.core.config import GrobidSetting, get_settings
 from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import MarkdownMeta, ArticleBlock
 from llm.schemas.markdown import FileSource, SourceType
@@ -60,6 +58,10 @@ class GrobidConnector:
         self.session.headers.update({
             'Accept': 'application/xml'
         })
+
+        if get_settings().server.network.USE_PROXY:
+            k, v = get_settings().server.network.PROXY.split('://')
+            self.session.proxies.update({k: v})
 
         self._check_server_status()
 
@@ -137,7 +139,7 @@ class GrobidConnector:
             if response.status_code != 200:
                 raise ResponseError('下载失败')
             else:
-                with open('test/temp.xml', 'w', encoding='utf-8') as f:
+                with open('temp/temp.xml', 'w', encoding='utf-8') as f:
                     f.write(response.text)
 
                 return self.__parse_xml(response.text)
