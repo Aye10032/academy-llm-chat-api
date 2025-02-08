@@ -15,11 +15,11 @@ from pydantic import BaseModel, model_validator, Field
 from tqdm import tqdm
 
 from llm.core.model import load_reranker, load_gpt4o
-from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH
+from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH
 from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
 from llm.schemas.tokens import UsageMetadata
-from llm.tool.modify import Modifier, OptimizerOutput
+from llm.tool.modify import Modifier, OptimizerOutput, Rewriter, RewriterOutput
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
 from llm.tool.search import WebSearchTool
 
@@ -197,15 +197,17 @@ class OptimizerAgent(BaseModel):
     llm: ChatOpenAI
 
     modifier: Optional[Modifier] = None
+    rewriter: Optional[Rewriter] = None
 
     @model_validator(mode='after')
     def setup_tools(self):
         self.modifier = Modifier(llm=self.llm)
+        self.rewriter = Rewriter(llm=self.llm)
 
         return self
 
     def optimizer_route_node(self, state: OptimizerAgentState):
-        tools = [self.modifier]
+        tools = [self.modifier, self.rewriter]
         llm_with_tool = self.llm.bind_tools(tools)
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content=OPTIMIZER_SYSTEM_ZH),
@@ -221,7 +223,7 @@ class OptimizerAgent(BaseModel):
             'price': token_usage.calculate_cost(self.llm)
         }
 
-    def optimizer_route(self, state: OptimizerAgentState) -> Literal['modifier', '__end__']:
+    def optimizer_route(self, state: OptimizerAgentState) -> Literal['rewriter', 'modifier', '__end__']:
         message: AIMessage = state['messages'][-1]
 
         if message.tool_calls:
@@ -229,8 +231,32 @@ class OptimizerAgent(BaseModel):
 
             if tool_call['name'] == self.modifier.name:
                 return 'modifier'
+            elif tool_call['name'] == self.rewriter.name:
+                return 'rewriter'
 
         return '__end__'
+
+    def rewriter_node(self, state: OptimizerAgentState) -> Command[Literal['router']]:
+        message: AIMessage = state['messages'][-1]
+        tool_call = message.tool_calls[0]
+        tool_call_id = tool_call['id']
+
+        response = self.modifier.invoke({
+            'query': tool_call['args']['query'],
+            'current_text': state['current_text']
+        })
+        modify_result: RewriterOutput = response['parsed']
+        token_usage = UsageMetadata.create(response['raw'].usage_metadata)
+
+        return Command(
+            update={
+                'messages': [
+                    ToolMessage(f'我已经完成了重写：{modify_result.explanation}', tool_call_id=tool_call_id)
+                ],
+                'current_text': modify_result.rewrite,
+                'price': token_usage.calculate_cost(self.llm)
+            }, goto='router'
+        )
 
     def modify_node(self, state: OptimizerAgentState) -> Command[Literal['router']]:
         message: AIMessage = state['messages'][-1]
@@ -256,6 +282,7 @@ class OptimizerAgent(BaseModel):
     def build(self) -> CompiledStateGraph:
         graph = StateGraph(OptimizerAgentState)
         graph.add_node('router', self.optimizer_route_node)
+        graph.add_node('rewriter', self.rewriter_node)
         graph.add_node('modifier', self.modify_node)
 
         graph.add_edge(START, 'router')
@@ -264,13 +291,9 @@ class OptimizerAgent(BaseModel):
         return graph.compile()
 
 
-class MainAgentState(MessagesState):
+class MainAgentState(BaseAgentState):
     current_text: str
     chat_history: Annotated[list[AnyMessage], add_messages]
-
-    input_token: Annotated[int, operator.add]
-    cached_input_token: Annotated[int, operator.add]
-    output_token: Annotated[int, operator.add]
 
 
 class MainAgent(BaseModel):
@@ -285,8 +308,8 @@ class MainAgent(BaseModel):
     @staticmethod
     @tool
     def generate_task():
-        """如果你需要从头开始撰写全新的文本内容，或者进资料搜索，请调用此工具。
-        它能够基于主题、关键词或具体要求搜索相关资料，并从头生成原创内容，适用于文章、故事、报告等各类写作需求。
+        """如果你需要从头开始撰写全新的文本内容，请调用此工具。
+        它能够基于主题、关键词从头生成原创内容，适用于文章、故事、报告等各类写作需求。
         """
         return
 
@@ -299,11 +322,23 @@ class MainAgent(BaseModel):
         """
         return
 
+    @staticmethod
+    @tool
+    def search_task():
+        """如果你需要搜索新的信息用于写作，请调用此工具。
+        它能够从向量数据库、网络等渠道根据你的需求查询信息，并将结果汇总后返回以用于进一步的写作任务。
+        """
+        return
+
     def main_route_node(
             self, state: MainAgentState
     ):
-        tools = [self.generate_task, self.optimize_task]
+        tools = [self.generate_task, self.optimize_task, self.search_task]
         llm_with_tool = self.llm.bind_tools(tools)
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(content=AGENT_SYSTEM_ZH),
+            MessagesPlaceholder(variable_name='history')
+        ])
 
         # 所有对话以 chat_history 传入
         if not state['messages']:
@@ -312,7 +347,8 @@ class MainAgent(BaseModel):
 
             state['messages'] = [user_question]
 
-        response = llm_with_tool.invoke(state['messages'])
+        chain = prompt | llm_with_tool
+        response = chain.invoke({'history': state['messages']})
         token_usage = UsageMetadata.create(response.usage_metadata)
 
         return {
@@ -320,28 +356,27 @@ class MainAgent(BaseModel):
             'price': token_usage.calculate_cost(self.llm)
         }
 
-    @staticmethod
-    def main_route(state: MainAgentState) -> Literal['text_generator', 'text_optimizer', '__end__']:
+    def main_route(self, state: MainAgentState) -> Literal['text_generator', 'text_optimizer', 'knowledge_searcher', '__end__']:
         message: AIMessage = state['messages'][-1]
-
-        if state['current_text']:
-            return 'text_generator'
 
         if message.tool_calls:
             tool_call = message.tool_calls[0]
 
-            if tool_call['name'] == 'generate_task':
+            if tool_call['name'] == self.generate_task.name:
                 return 'text_generator'
-            elif tool_call['name'] == 'optimize_task':
+
+            if tool_call['name'] == self.optimize_task.name:
                 return 'text_optimizer'
+
+            if tool_call['name'] == self.search_task.name:
+                return 'knowledge_searcher'
 
         return '__end__'
 
     def text_generator_agent(self, state: MainAgentState):
-
         return {}
 
-    def knowledge_searcher(self, state: MainAgentState):
+    def knowledge_searcher_agent(self, state: MainAgentState):
         searcher = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web).build()
         search_query = state['messages'][-1].content
         output: KnowledgeManageAgentState = searcher.invoke({
@@ -355,35 +390,40 @@ class MainAgent(BaseModel):
         }
 
     def text_optimizer_agent(self, state: MainAgentState):
-        subgraph = OptimizerAgent().build()
+        message: AIMessage = state['messages'][-1]
+        tool_call = message.tool_calls[0]
+        tool_call_id = tool_call['id']
+
+        subgraph = OptimizerAgent(llm=self.llm).build()
         message = trim_messages(
             state['messages'],
             strategy='last',
             token_counter=len,
             max_tokens=5,
             start_on='human',
-            end_on=('ai', 'tool'),
+            end_on='human',
             include_system=False
         )
         response = subgraph.invoke({
             'messages': message,
             'current_text': state['current_text']
         })
-        return Command(
-            update={
-
-            },
-            goto='router'
-        )
+        return {
+            'messages': [ToolMessage(content=response['messages'][-1].content, tool_call_id=tool_call_id)],
+            'current_text': response['current_text'],
+            'price': response['price']
+        }
 
     def build(self) -> CompiledStateGraph:
         graph = StateGraph(MainAgentState)
         graph.add_node('router', self.main_route_node)
         graph.add_node('text_generator', self.text_generator_agent)
         graph.add_node('text_optimizer', self.text_optimizer_agent)
-        graph.add_node('knowledge_searcher', self.knowledge_searcher)
+        graph.add_node('knowledge_searcher', self.knowledge_searcher_agent)
 
         graph.add_edge(START, 'router')
         graph.add_conditional_edges('router', self.main_route)
+        graph.add_edge('text_optimizer', 'router')
+        graph.add_edge('knowledge_searcher', 'router')
 
         return graph.compile()
