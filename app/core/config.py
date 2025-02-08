@@ -30,8 +30,15 @@ class ServerSetting(BaseModel):
     LOGGING_LEVEL: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR']
     INIT_USER: str
     INIT_PASSWORD: str
+    TEMP_DIR: str
 
     network: ServerNetworkSetting
+
+    @model_validator(mode='after')
+    def create_temp_dir(self) -> Self:
+        os.makedirs(self.TEMP_DIR, exist_ok=True)
+
+        return self
 
 
 class GrobidSetting(BaseModel):

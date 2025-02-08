@@ -3,6 +3,7 @@ database_url = "sqlite:///./data/app.db"
 logging_level = "INFO"
 init_user = "admin@example.com"
 init_password = "password"
+temp_dir = "./temp/"
 
 [server.network]
 service_host_ip = "127.0.0.1"
