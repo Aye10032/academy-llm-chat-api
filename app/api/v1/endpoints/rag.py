@@ -204,7 +204,7 @@ async def chat(
 
     # 自动生成总结
     chat_info = get_chat(session, request.chat_uid)
-    if chat_info.description == '新建对话':
+    if chat_info.description == '新建对话' and chat_message_history.messages:
         asyncio.create_task(generate_summary())
 
     # 更新用户信息
