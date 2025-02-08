@@ -377,15 +377,26 @@ class MainAgent(BaseModel):
         return {}
 
     def knowledge_searcher_agent(self, state: MainAgentState):
-        searcher = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web).build()
-        search_query = state['messages'][-1].content
-        output: KnowledgeManageAgentState = searcher.invoke({
-            'messages': [HumanMessage(search_query)],
-            'origin_question': search_query
+        message: AIMessage = state['messages'][-1]
+        tool_call = message.tool_calls[0]
+        tool_call_id = tool_call['id']
+
+        subgraph = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web).build()
+        message = trim_messages(
+            state['messages'],
+            strategy='last',
+            token_counter=len,
+            max_tokens=5,
+            start_on='human',
+            end_on='human',
+            include_system=False
+        )
+        output: KnowledgeManageAgentState = subgraph.invoke({
+            'messages': message,
         })
 
         return {
-            'messages': [ToolMessage('')],
+            'messages': [ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)],
             'price': output['price']
         }
 
