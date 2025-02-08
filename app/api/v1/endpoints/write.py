@@ -4,7 +4,6 @@ from enum import Enum
 from typing import Annotated, List, Union
 from uuid import uuid4
 import os
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
 from langchain_core.messages import HumanMessage
@@ -14,10 +13,12 @@ from starlette.responses import StreamingResponse
 
 from app.core.security import get_current_active_user
 from app.crud.chat_session import insert_chat, get_chat_list
+from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
 from app.crud.write_project import insert_project, get_project_list, get_project
 from app.db.session import SessionDep
-from app.models import UserTable, WriteProjectTable, ChatSessionTable
+from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
 from app.schemas.chat_session import ChatSession
+from app.schemas.manuscript import ManuscriptPublic, Manuscript
 from app.schemas.user import User
 from app.schemas.write_project import WriteProject
 from llm.core.agent import MainAgent
@@ -108,6 +109,41 @@ async def add_new_chat(
 
     new_chat = insert_chat(session, new_chat)
     return new_chat.chat_uid
+
+
+@router.get('/manuscripts', response_model=list[ManuscriptPublic])
+async def get_manuscripts(
+        session: SessionDep,
+        project_uid: str,
+        # current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return get_manuscripts_list(session, project_uid)
+
+
+@router.get('/manuscript', response_model=Manuscript)
+async def read_manuscript(
+        session: SessionDep,
+        uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return get_manuscript(session, uid)
+
+
+@router.patch('/new_manuscript')
+async def add_new_manuscript(
+        session: SessionDep,
+        project_uid: str,
+        title: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+) -> str:
+    manuscript = ManuscriptTable(
+        uid=str(uuid4()),
+        project_uid=project_uid,
+        title=title,
+    )
+
+    manuscript = insert_manuscript(session, manuscript)
+    return manuscript.uid
 
 
 async def event_generator(
