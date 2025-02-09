@@ -5,7 +5,7 @@ from enum import Enum
 import json
 import asyncio
 
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, Form
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from loguru import logger
 from pydantic import BaseModel
@@ -24,12 +24,6 @@ from llm.core.chain import rag_chain, conclude_chat
 from llm.core.model import load_embedding, load_reranker
 from llm.rag.retriever import base_retriever
 from llm.rag.storage import get_vector_db, get_doc_db
-
-
-class ChatRequest(BaseModel):
-    message: str
-    knowledge_base_uid: str
-    chat_uid: str
 
 
 class ChatEventType(Enum):
@@ -115,18 +109,20 @@ async def load_chat(
 @router.post('/chat')
 async def chat(
         session: SessionDep,
-        request: ChatRequest,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
+        message: str = Form(...),
+        knowledge_base_uid: str = Form(...),
+        chat_uid: str = Form(...),
 ):
     chat_message_history = SQLChatMessageHistory(
-        session_id=request.chat_uid,
+        session_id=chat_uid,
         connection=engine
     )
-    knowledge_base = get_knowledge_base(session, request.knowledge_base_uid)
+    knowledge_base = get_knowledge_base(session, knowledge_base_uid)
     table_name = knowledge_base.table_name
 
-    logger.debug(f'knowledge_base: {table_name} session:{request.chat_uid}')
-    logger.info(f'{current_user.username}: {request.message}')
+    logger.debug(f'knowledge_base: {table_name} session:{chat_uid}')
+    logger.info(f'{current_user.username}: {message}')
 
     async def generate():
         # 发送模型加载状态
@@ -151,7 +147,7 @@ async def chat(
         await asyncio.sleep(0.1)  # 添加小延迟
 
         retriever = base_retriever(vec_db, doc_db, reranker)
-        docs = retriever.invoke(request.message)
+        docs = retriever.invoke(message)
 
         # 发送检索到的文档
         docs_data = [{
@@ -177,7 +173,7 @@ async def chat(
         async for chunk in chain.astream({
             'chat_history': [],
             'docs': docs,
-            'question': request.message
+            'question': message
         }):
             if chunk.content:
                 full_response += chunk.content
@@ -187,7 +183,7 @@ async def chat(
                 ).to_sse()
 
         logger.info(f'AI: {full_response}')
-        chat_message_history.add_user_message(request.message)
+        chat_message_history.add_user_message(message)
         chat_message_history.add_ai_message(full_response)
 
     async def generate_summary():
@@ -195,7 +191,7 @@ async def chat(
         now_time = datetime.now()
         update_chat(
             session,
-            request.chat_uid,
+            chat_uid,
             ChatSessionUpdate(
                 description=conclude.content,
                 update_time=now_time
@@ -203,7 +199,7 @@ async def chat(
         )
 
     # 自动生成总结
-    chat_info = get_chat(session, request.chat_uid)
+    chat_info = get_chat(session, chat_uid)
     if chat_info.description == '新建对话' and chat_message_history.messages:
         asyncio.create_task(generate_summary())
 
@@ -211,7 +207,7 @@ async def chat(
     update_user(
         session,
         str(current_user.email),
-        UserUpdate(last_knowledge_base=request.knowledge_base_uid)
+        UserUpdate(last_knowledge_base=knowledge_base_uid)
     )
 
     return StreamingResponse(
