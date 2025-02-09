@@ -16,13 +16,13 @@ from starlette.responses import StreamingResponse
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
 from app.crud.chat_session import insert_chat, get_chat_list, update_chat, get_chat
-from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
+from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript, update_manuscript
 from app.crud.user import update_user
 from app.crud.write_project import insert_project, get_project_list, get_project, update_project
 from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
-from app.schemas.manuscript import ManuscriptPublic, Manuscript
+from app.schemas.manuscript import ManuscriptPublic, Manuscript, ManuscriptUpdate
 from app.schemas.user import User, UserUpdate
 from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent
@@ -133,14 +133,7 @@ async def read_manuscript(
         uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    now_time = datetime.now()
-    manuscript = get_manuscript(session, uid)
-    project = WriteProjectUpdate(
-        last_manuscript=uid,
-        update_time=now_time
-    )
-    update_project(session, manuscript.project_uid, project)
-    return manuscript
+    return get_manuscript(session, uid)
 
 
 @router.patch('/new_manuscript')
@@ -160,13 +153,45 @@ async def add_new_manuscript(
     return manuscript.uid
 
 
+@router.post('/save_manuscript')
+async def save_manuscript(
+        session: SessionDep,
+        uid: str,
+        content: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+) -> str:
+    now_time = datetime.now()
+    last_manuscript = get_manuscript(session, uid)
+
+    if last_manuscript.content == content:
+        return uid
+
+    new_manuscript = ManuscriptTable(
+        uid=uid,
+        project_uid=last_manuscript.project_uid,
+        title=last_manuscript.title,
+        content=content,
+        version=last_manuscript.version + 1,
+        is_draft=last_manuscript.is_draft
+    )
+    new_manuscript = insert_manuscript(session, new_manuscript)
+
+    project = WriteProjectUpdate(
+        last_manuscript=uid,
+        update_time=now_time
+    )
+    update_project(session, new_manuscript.project_uid, project)
+
+    return new_manuscript.uid
+
+
 @router.post('/chat')
 async def chat(
         session: SessionDep,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
         project_uid: str = Form(...),
         chat_uid: str = Form(...),
-        message: str = Form(None),
+        message: str = Form(...),
         current_text: str = Form(None),
         files: list[UploadFile] = File([])
 ):

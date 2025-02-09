@@ -21,4 +21,4 @@ class ManuscriptPublic(SQLModel):
 class ManuscriptUpdate(SQLModel):
     title: Optional[str] = None
     content: Optional[str] = None
-    version: Optional[str] = None
+    version:Optional[int] = None
