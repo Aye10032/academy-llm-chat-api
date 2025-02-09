@@ -15,6 +15,6 @@ class WriteProject(SQLModel):
 
 
 class WriteProjectUpdate(SQLModel):
-    description: Optional[str]
-    last_manuscript: Optional[str]
+    description: Optional[str] = None
+    last_manuscript: Optional[str] = None
     update_time: datetime
