@@ -18,13 +18,13 @@ from app.core.security import get_current_active_user
 from app.crud.chat_session import insert_chat, get_chat_list, update_chat, get_chat
 from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
 from app.crud.user import update_user
-from app.crud.write_project import insert_project, get_project_list, get_project
+from app.crud.write_project import insert_project, get_project_list, get_project, update_project
 from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
 from app.schemas.manuscript import ManuscriptPublic, Manuscript
 from app.schemas.user import User, UserUpdate
-from app.schemas.write_project import WriteProject
+from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent
 from llm.core.chain import conclude_chat
 from llm.core.model import load_glm4_flash, load_gpt4o_mini
@@ -133,7 +133,14 @@ async def read_manuscript(
         uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    return get_manuscript(session, uid)
+    now_time = datetime.now()
+    manuscript = get_manuscript(session, uid)
+    project = WriteProjectUpdate(
+        last_manuscript=uid,
+        update_time=now_time
+    )
+    update_project(session, manuscript.project_uid, project)
+    return manuscript
 
 
 @router.patch('/new_manuscript')

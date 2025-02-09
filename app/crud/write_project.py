@@ -1,8 +1,10 @@
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.models import WriteProjectTable
+from app.schemas.write_project import WriteProjectUpdate
 
 
 def get_project_list(
@@ -23,3 +25,18 @@ def insert_project(session: Session, project: WriteProjectTable) -> WriteProject
     session.commit()
     session.refresh(project)
     return project
+
+
+def update_project(
+        session: Session, project_uid: str, project: WriteProjectUpdate
+) -> WriteProjectTable:
+    db_project = get_project(session, project_uid)
+    if not db_project:
+        raise HTTPException(status_code=404, detail='该记录不存在！')
+
+    project_data = project.model_dump(exclude_unset=True)
+    db_project.sqlmodel_update(project_data)
+    session.add(db_project)
+    session.commit()
+    session.refresh(db_project)
+    return db_project
