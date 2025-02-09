@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from enum import Enum
@@ -6,6 +7,7 @@ from uuid import uuid4
 import os
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
+from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain_core.messages import HumanMessage
 from loguru import logger
 from pydantic import BaseModel
@@ -13,16 +15,18 @@ from starlette.responses import StreamingResponse
 
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
-from app.crud.chat_session import insert_chat, get_chat_list
+from app.crud.chat_session import insert_chat, get_chat_list, update_chat, get_chat
 from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
+from app.crud.user import update_user
 from app.crud.write_project import insert_project, get_project_list, get_project
-from app.db.session import SessionDep
+from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
-from app.schemas.chat_session import ChatSession
+from app.schemas.chat_session import ChatSession, ChatSessionUpdate
 from app.schemas.manuscript import ManuscriptPublic, Manuscript
-from app.schemas.user import User
+from app.schemas.user import User, UserUpdate
 from app.schemas.write_project import WriteProject
 from llm.core.agent import MainAgent
+from llm.core.chain import conclude_chat
 from llm.core.model import load_glm4_flash, load_gpt4o_mini
 from llm.tool.modify import OptimizerOutput
 
@@ -157,9 +161,14 @@ async def chat(
         chat_uid: str = Form(...),
         message: str = Form(None),
         current_text: str = Form(None),
-        files: list[UploadFile] = File(description="Multiple files as UploadFile")
+        files: list[UploadFile] = File([])
 ):
     logger.debug(f'project: {project_uid} session:{chat_uid}')
+
+    chat_message_history = SQLChatMessageHistory(
+        session_id=chat_uid,
+        connection=engine
+    )
 
     uploaded_files = []
     if files:
@@ -185,6 +194,30 @@ async def chat(
             except Exception as e:
                 logger.error(f"Error processing file {file.filename}: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"处理文件时发生错误 {file.filename}") from e
+
+    async def generate_summary():
+        conclude = conclude_chat(chat_message_history)
+        now_time = datetime.now()
+        update_chat(
+            session,
+            chat_uid,
+            ChatSessionUpdate(
+                description=conclude.content,
+                update_time=now_time
+            )
+        )
+
+    # 自动生成总结
+    chat_info = get_chat(session, chat_uid)
+    if chat_info.description == '新建对话' and chat_message_history.messages:
+        asyncio.create_task(generate_summary())
+
+    # 更新用户信息
+    update_user(
+        session,
+        str(current_user.email),
+        UserUpdate(last_project=project_uid)
+    )
 
     return StreamingResponse(
         event_generator(message, uploaded_files, current_text, current_user),
@@ -220,18 +253,23 @@ async def event_generator(
                         'messages': [HumanMessage(content=message)],
                         'current_text': current_text
                     },
-                    {'configurable': {'thread_id': '1'}, 'recursion_limit': 10},
+                    {'configurable': {'thread_id': '1'}, 'recursion_limit': 25},
                     version='v2',
                     exclude_names=['_write', 'RunnableSequence', 'RunnableLambda']
             ):
-
-                if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'router':
+                if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'main_router':
                     data = event['data']
                     if data['chunk'].content:
                         yield SSEMessage(
                             event=ChatEventType.ANSWER,
                             data=data['chunk'].content
                         ).to_sse()
+
+                if event['event'] == 'on_chat_model_end':
+                    yield SSEMessage(
+                        event=ChatEventType.STATUS,
+                        data='chat end'
+                    ).to_sse()
 
                 if event['event'] == 'on_tool_end' and event['name'] == 'modifier':
                     modify: OptimizerOutput = event['data']['output']['parsed']
@@ -240,13 +278,13 @@ async def event_generator(
                         data=modify.model_dump()
                     ).to_sse()
 
-                if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'search_conclude':
-                    data = event['data']
-                    if data['chunk'].content:
-                        yield SSEMessage(
-                            event=ChatEventType.WRITE,
-                            data=data['chunk'].content
-                        ).to_sse()
+                # if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'search_conclude':
+                #     data = event['data']
+                #     if data['chunk'].content:
+                #         yield SSEMessage(
+                #             event=ChatEventType.WRITE,
+                #             data=data['chunk'].content
+                #         ).to_sse()
 
     except Exception as e:
         logger.error(f"Unexpected error in event generator: {str(e)}")

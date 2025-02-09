@@ -236,7 +236,7 @@ class OptimizerAgent(BaseModel):
 
         return '__end__'
 
-    def rewriter_node(self, state: OptimizerAgentState) -> Command[Literal['router']]:
+    def rewriter_node(self, state: OptimizerAgentState) -> Command[Literal['optimizer_router']]:
         message: AIMessage = state['messages'][-1]
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
@@ -255,10 +255,10 @@ class OptimizerAgent(BaseModel):
                 ],
                 'current_text': modify_result.rewrite,
                 'price': token_usage.calculate_cost(self.llm)
-            }, goto='router'
+            }, goto='optimizer_router'
         )
 
-    def modify_node(self, state: OptimizerAgentState) -> Command[Literal['router']]:
+    def modify_node(self, state: OptimizerAgentState) -> Command[Literal['optimizer_router']]:
         message: AIMessage = state['messages'][-1]
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
@@ -276,17 +276,17 @@ class OptimizerAgent(BaseModel):
                     ToolMessage(f'我已经完成了修改：{str(modify_result.model_dump())}', tool_call_id=tool_call_id)
                 ],
                 'price': token_usage.calculate_cost(self.llm)
-            }, goto='router'
+            }, goto='optimizer_router'
         )
 
     def build(self) -> CompiledStateGraph:
         graph = StateGraph(OptimizerAgentState)
-        graph.add_node('router', self.optimizer_route_node)
+        graph.add_node('optimizer_router', self.optimizer_route_node)
         graph.add_node('rewriter', self.rewriter_node)
         graph.add_node('modifier', self.modify_node)
 
-        graph.add_edge(START, 'router')
-        graph.add_conditional_edges('router', self.optimizer_route)
+        graph.add_edge(START, 'optimizer_router')
+        graph.add_conditional_edges('optimizer_router', self.optimizer_route)
 
         return graph.compile()
 
@@ -427,14 +427,14 @@ class MainAgent(BaseModel):
 
     def build(self) -> CompiledStateGraph:
         graph = StateGraph(MainAgentState)
-        graph.add_node('router', self.main_route_node)
+        graph.add_node('main_router', self.main_route_node)
         graph.add_node('text_generator', self.text_generator_agent)
         graph.add_node('text_optimizer', self.text_optimizer_agent)
         graph.add_node('knowledge_searcher', self.knowledge_searcher_agent)
 
-        graph.add_edge(START, 'router')
-        graph.add_conditional_edges('router', self.main_route)
-        graph.add_edge('text_optimizer', 'router')
-        graph.add_edge('knowledge_searcher', 'router')
+        graph.add_edge(START, 'main_router')
+        graph.add_conditional_edges('main_router', self.main_route)
+        graph.add_edge('text_optimizer', 'main_router')
+        graph.add_edge('knowledge_searcher', 'main_router')
 
         return graph.compile()
