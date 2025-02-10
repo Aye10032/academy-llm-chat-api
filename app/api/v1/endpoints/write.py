@@ -117,6 +117,16 @@ async def add_new_chat(
     new_chat = insert_chat(session, new_chat)
     return new_chat.chat_uid
 
+@router.get('/chat/{chat_uid}')
+async def load_chat(
+        chat_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    chat_message_history = SQLChatMessageHistory(
+        session_id=chat_uid,
+        connection=engine
+    )
+    return chat_message_history.messages
 
 @router.get('/manuscripts', response_model=list[ManuscriptPublic])
 async def get_manuscripts(
@@ -252,7 +262,7 @@ async def chat(
     )
 
     return StreamingResponse(
-        event_generator(message, uploaded_files, current_text, current_user),
+        event_generator(message, uploaded_files, current_text, current_user, chat_message_history),
         media_type='text/event-stream'
     )
 
@@ -261,7 +271,8 @@ async def event_generator(
         message: str,
         uploaded_files: list[dict[str, Any]],
         current_text: str,
-        user: User
+        user: User,
+        chat_message_history: SQLChatMessageHistory
 ):
     try:
         if uploaded_files:
@@ -279,6 +290,7 @@ async def event_generator(
             logger.info(f'{user.username}: {message}')
             llm = load_gpt4o_mini()
             app = MainAgent(llm=llm).build()
+            full_response = ''
 
             async for event in app.astream_events(
                     {
@@ -292,6 +304,7 @@ async def event_generator(
                 if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'main_router':
                     data = event['data']
                     if data['chunk'].content:
+                        full_response += data['chunk'].content
                         yield SSEMessage(
                             event=ChatEventType.ANSWER,
                             data=data['chunk'].content
@@ -317,6 +330,10 @@ async def event_generator(
                 #             event=ChatEventType.WRITE,
                 #             data=data['chunk'].content
                 #         ).to_sse()
+
+            logger.info(f'AI: {full_response}')
+            chat_message_history.add_user_message(message)
+            chat_message_history.add_ai_message(full_response)
 
     except Exception as e:
         logger.error(f"Unexpected error in event generator: {str(e)}")
