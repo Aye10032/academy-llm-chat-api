@@ -74,8 +74,8 @@ class SelectKnowledgeBase(BaseTool):
 
 
 class RAGSearchInput(BaseModel):
-    query: str = Field(description='用于从知识库中召回长文本的搜索文本')
-    target_collection: str = Field(description='具体使用的知识库名称')
+    question: str = Field(description='用于从知识库中召回长文本的搜索文本')
+    table_name: str = Field(description='具体使用的知识库名称')
 
 
 class RAGSearchTool(BaseTool):
@@ -87,17 +87,17 @@ class RAGSearchTool(BaseTool):
 
     def _run(
             self,
-            query: str,
-            target_collection: str,
+            question: str,
+            table_name: str,
             config: Optional[RunnableConfig] = None
     ) -> list[Document]:
         """从向量数据库中进行查询操作"""
-        logger.info(f'Calling VecstoreSearchTool with query {query}')
+        logger.info(f'Calling VecstoreSearchTool with query {question}')
 
         embedding = load_embedding()
 
-        vec_store = get_vector_db(target_collection, embedding, db_name='llm_chat')
-        doc_store = get_doc_db(target_collection)
+        vec_store = get_vector_db(table_name, embedding, db_name='llm_chat')
+        doc_store = get_doc_db(table_name)
 
         retriever = MultiVectorRetriever(
             vectorstore=vec_store,
@@ -105,5 +105,5 @@ class RAGSearchTool(BaseTool):
             search_kwargs={'k': 8, 'fetch_k': 10}
         )
 
-        output = retriever.invoke(query, config)
+        output = retriever.invoke(question, config)
         return output

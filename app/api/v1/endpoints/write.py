@@ -11,6 +11,7 @@ from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain_core.messages import HumanMessage
 from loguru import logger
 from pydantic import BaseModel
+from sqlmodel import Session
 from starlette.responses import StreamingResponse
 
 from app.core.config import get_settings
@@ -117,6 +118,7 @@ async def add_new_chat(
     new_chat = insert_chat(session, new_chat)
     return new_chat.chat_uid
 
+
 @router.get('/chat/{chat_uid}')
 async def load_chat(
         chat_uid: str,
@@ -127,6 +129,7 @@ async def load_chat(
         connection=engine
     )
     return chat_message_history.messages
+
 
 @router.get('/manuscripts', response_model=list[ManuscriptPublic])
 async def get_manuscripts(
@@ -262,17 +265,19 @@ async def chat(
     )
 
     return StreamingResponse(
-        event_generator(message, uploaded_files, current_text, current_user, chat_message_history),
+        event_generator(project_uid, message, uploaded_files, current_text, current_user, chat_message_history, session),
         media_type='text/event-stream'
     )
 
 
 async def event_generator(
+        project_uid: str,
         message: str,
         uploaded_files: list[dict[str, Any]],
         current_text: str,
         user: User,
-        chat_message_history: SQLChatMessageHistory
+        chat_message_history: SQLChatMessageHistory,
+        session: Session
 ):
     try:
         if uploaded_files:
@@ -289,38 +294,46 @@ async def event_generator(
         else:
             logger.info(f'{user.username}: {message}')
             llm = load_gpt4o_mini()
-            app = MainAgent(llm=llm).build()
+            app = MainAgent(llm=llm, session=session, use_web=False).build()
             full_response = ''
 
             async for event in app.astream_events(
                     {
                         'messages': [HumanMessage(content=message)],
-                        'current_text': current_text
+                        'current_text': current_text,
+                        'project_uid': project_uid
                     },
                     {'configurable': {'thread_id': '1'}, 'recursion_limit': 25},
                     version='v2',
                     exclude_names=['_write', 'RunnableSequence', 'RunnableLambda']
             ):
-                if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'main_router':
-                    data = event['data']
-                    if data['chunk'].content:
-                        full_response += data['chunk'].content
+                if event['name'] == 'ChatOpenAI':
+                    if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'main_router':
+                        data = event['data']
+                        if data['chunk'].content:
+                            full_response += data['chunk'].content
+                            yield SSEMessage(
+                                event=ChatEventType.ANSWER,
+                                data=data['chunk'].content
+                            ).to_sse()
+
+                    elif event['event'] == 'on_chat_model_end' and event['metadata']['langgraph_node'] == 'main_router':
                         yield SSEMessage(
-                            event=ChatEventType.ANSWER,
-                            data=data['chunk'].content
+                            event=ChatEventType.STATUS,
+                            data='chat end'
                         ).to_sse()
 
-                if event['event'] == 'on_chat_model_end':
-                    yield SSEMessage(
-                        event=ChatEventType.STATUS,
-                        data='chat end'
-                    ).to_sse()
-
-                if event['event'] == 'on_tool_end' and event['name'] == 'modifier':
+                elif event['event'] == 'on_tool_end' and event['name'] == 'modifier':
                     modify: OptimizerOutput = event['data']['output']['parsed']
                     yield SSEMessage(
                         event=ChatEventType.MODIFY,
                         data=modify.model_dump()
+                    ).to_sse()
+
+                elif event['event'] == 'on_chain_start' and event['name'] == 'search_conclude':
+                    yield SSEMessage(
+                        event=ChatEventType.STATUS,
+                        data='conclude'
                     ).to_sse()
 
                 # if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'search_conclude':

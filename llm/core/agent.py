@@ -1,6 +1,7 @@
 import operator
 
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, Any
+from uuid import uuid4
 
 from langchain_core.messages import SystemMessage, ToolMessage, ToolCall, AIMessage, AnyMessage, HumanMessage, trim_messages
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -12,8 +13,12 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 from langgraph.graph import StateGraph, END, MessagesState, add_messages
 from pydantic import BaseModel, model_validator, Field
+from sqlmodel import Session
 from tqdm import tqdm
 
+from app.crud.manuscript import insert_manuscript
+from app.models import ManuscriptTable
+from app.schemas.manuscript import Manuscript
 from llm.core.model import load_reranker, load_gpt4o
 from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH
 from llm.file_loader.web import JinaWebLoader
@@ -25,6 +30,7 @@ from llm.tool.search import WebSearchTool
 
 
 class BaseAgentState(MessagesState):
+    project_uid: str
     price: Annotated[float, operator.add]
 
 
@@ -36,6 +42,7 @@ class KnowledgeManageAgent(BaseModel):
     use_web: bool = True
     available_knowledge_bases: list[str] = Field(default_factory=list)
     llm: ChatOpenAI
+    session: Any
 
     tools: list[BaseTool] = Field(default_factory=list)
     select_tool: Optional[SelectKnowledgeBase] = None
@@ -63,7 +70,7 @@ class KnowledgeManageAgent(BaseModel):
         return self
 
     def search_router(self, state: KnowledgeManageAgentState):
-        llm_with_tool = self.llm.bind_tools(self.tools, tool_choice='required')
+        llm_with_tool = self.llm.bind_tools(self.tools)
         messages = state['messages']
         response: AIMessage = llm_with_tool.invoke(messages)
 
@@ -73,71 +80,110 @@ class KnowledgeManageAgent(BaseModel):
             'price': token_usage.calculate_cost(self.llm)
         }
 
-    def choose_tool(self, state: KnowledgeManageAgentState) -> Literal['web_tool', 'rag_tool']:
+    def choose_tool(self, state: KnowledgeManageAgentState) -> Literal['web_tool', 'rag_select', 'rag_search', '__end__']:
         messages = state['messages']
         tool_calls = messages[-1].tool_calls
 
-        tool_call = tool_calls[0]
-        if tool_call['name'] == self.web_search_tool.name:
-            return 'web_tool'
+        if tool_calls:
+            tool_call = tool_calls[0]
+            if tool_call['name'] == self.web_search_tool.name:
+                return 'web_tool'
+            elif tool_call['name'] == self.select_tool.name:
+                return 'rag_select'
+            elif tool_call['name'] == self.rag_search_tool.name:
+                return 'rag_search'
         else:
-            return 'rag_tool'
+            return '__end__'
 
-    def rag_tool_node(self, state: KnowledgeManageAgentState) -> Command[Literal['search_router', 'search_conclude']]:
+    def rag_select_node(self, state: KnowledgeManageAgentState) -> Command[Literal['search_router', 'rag_search']]:
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
         tool_call_id = tool_call['id']
 
-        if tool_call['name'] == self.select_tool.name:
-            select_dict: SelectKnowledgeBaseOutput = self.select_tool.invoke(tool_call['args'])
+        select_dict = self.select_tool.invoke(tool_call['args'])
 
-            select_result = select_dict['parsed']
-            token_usage = UsageMetadata.create(select_dict['raw'].usage_metadata)
+        select_result: SelectKnowledgeBaseOutput = select_dict['parsed']
+        token_usage = UsageMetadata.create(select_dict['raw'].usage_metadata)
 
-            if not select_result.table_name:
-                if self.use_web:
-                    return Command(
-                        update={
-                            'messages': [
-                                ToolMessage('没有合适的向量数据库，向量数据库查询失败。', tool_call_id=tool_call_id)
-                            ],
-                            'price': token_usage.calculate_cost(self.llm)
-                        }, goto='search_router'
+        if not select_result.table_name:
+            if self.use_web:
+                return Command(
+                    update={
+                        'messages': [
+                            ToolMessage('没有合适的向量数据库，向量数据库查询失败，请尝试联网查询。', tool_call_id=tool_call_id)
+                        ],
+                        'price': token_usage.calculate_cost(self.llm)
+                    }, goto='search_router'
+                )
+            else:
+                return Command(
+                    update={
+                        'messages': [
+                            ToolMessage(
+                                '没有合适的向量数据库，向量数据库查询失败，请将这个结果反馈给用户，并询问用户是否考虑联网搜索。',
+                                tool_call_id=tool_call_id
+                            )
+                        ],
+                        'price': token_usage.calculate_cost(self.llm)
+                    },
+                    goto='search_router'
+                )
+
+        messages.pop(-1)
+        return Command(
+            update={
+                'messages': [
+                    AIMessage(
+                        '', tool_calls=[
+                            ToolCall(
+                                name=self.rag_search_tool.name,
+                                args=select_result.model_dump(),
+                                id=tool_call_id
+                            )
+                        ]
                     )
-                else:
-                    return Command(
-                        update={
-                            'price': token_usage.calculate_cost(self.llm)
-                        },
-                        goto='search_conclude'
-                    )
+                ],
+                'price': token_usage.calculate_cost(self.llm)
+            },
+            goto='rag_search'
+        )
 
-            search_result = self.rag_search_tool.invoke({
-                'query': select_result.question,
-                'target_collection': select_result.table_name
-            })
-        else:
-            search_result = self.rag_search_tool.invoke(tool_call['args'])
-            token_usage = UsageMetadata.create(None)
+    def rag_search_node(self, state: KnowledgeManageAgentState) -> Command[Literal['search_router', 'search_conclude']]:
+        messages = state['messages']
+        tool_call: ToolCall = messages[-1].tool_calls[0]
+        tool_call_id = tool_call['id']
 
-        if search_result or not self.use_web:
+        search_result = self.rag_search_tool.invoke(tool_call['args'])
+
+        if search_result:
             return Command(
                 update={
                     'documents': search_result,
-                    'price': token_usage.calculate_cost(self.llm)
                 },
                 goto='search_conclude'
             )
 
-        return Command(
-            update={
-                'messages': [
-                    ToolMessage('向量数据库查询失败', tool_call_id=tool_call_id)
-                ],
-                'price': token_usage.calculate_cost(self.llm)
-            },
-            goto='search_router'
-        )
+        if self.use_web:
+            return Command(
+                update={
+                    'messages': [
+                        ToolMessage('向量数据库查询失败，请尝试联网查询。', tool_call_id=tool_call_id)
+                    ]
+                },
+                goto='search_router'
+            )
+        else:
+            return Command(
+                update={
+                    'messages': [
+                        ToolMessage(
+                            '没有合适的向量数据库，向量数据库查询失败，请将这个结果反馈给用户，并询问用户是否考虑联网搜索。',
+                            tool_call_id=tool_call_id
+                        )
+                    ],
+                },
+                goto='search_router'
+            )
 
     def web_tool_node(self, state: KnowledgeManageAgentState):
         messages = state['messages']
@@ -168,16 +214,29 @@ class KnowledgeManageAgent(BaseModel):
             'doc_str': format_docs(clean_output, 'zh')
         })
 
+        lines = response.content.splitlines()
+        title = lines[0]
+
+        manuscript = ManuscriptTable(
+            uid=str(uuid4()),
+            project_uid=state['project_uid'],
+            title=title.lstrip('#').strip(),
+            content=response.content,
+            is_draft=True
+        )
+        insert_manuscript(self.session, manuscript)
+
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
-            'messages': [response],
+            'messages': [AIMessage(content=f'我已经将总结的资料保存到了文件《{title}》中。')],
             'price': token_usage.calculate_cost(self.llm)
         }
 
     def build(self) -> CompiledStateGraph:
         searcher = StateGraph(KnowledgeManageAgentState)
         searcher.add_node('search_router', self.search_router)
-        searcher.add_node('rag_tool', self.rag_tool_node)
+        searcher.add_node('rag_select', self.rag_select_node)
+        searcher.add_node('rag_search', self.rag_search_node)
         searcher.add_node('web_tool', self.web_tool_node)
         searcher.add_node('search_conclude', self.search_conclude_node)
 
@@ -299,6 +358,7 @@ class MainAgentState(BaseAgentState):
 class MainAgent(BaseModel):
     llm: Optional[ChatOpenAI] = None
     use_web: bool = False
+    session: Any = None
 
     @model_validator(mode='after')
     def setup_llm(self):
@@ -381,7 +441,7 @@ class MainAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        subgraph = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web).build()
+        subgraph = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web, session=self.session).build()
         message = trim_messages(
             state['messages'],
             strategy='last',
@@ -393,6 +453,7 @@ class MainAgent(BaseModel):
         )
         output: KnowledgeManageAgentState = subgraph.invoke({
             'messages': message,
+            'project_uid': state['project_uid']
         })
 
         return {
