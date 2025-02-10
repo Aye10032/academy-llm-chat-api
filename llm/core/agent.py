@@ -17,6 +17,7 @@ from sqlmodel import Session
 from tqdm import tqdm
 
 from app.crud.manuscript import insert_manuscript
+from app.db.session import engine
 from app.models import ManuscriptTable
 from app.schemas.manuscript import Manuscript
 from llm.core.model import load_reranker, load_gpt4o
@@ -42,7 +43,6 @@ class KnowledgeManageAgent(BaseModel):
     use_web: bool = True
     available_knowledge_bases: list[str] = Field(default_factory=list)
     llm: ChatOpenAI
-    session: Any
 
     tools: list[BaseTool] = Field(default_factory=list)
     select_tool: Optional[SelectKnowledgeBase] = None
@@ -224,7 +224,8 @@ class KnowledgeManageAgent(BaseModel):
             content=response.content,
             is_draft=True
         )
-        insert_manuscript(self.session, manuscript)
+        with Session(engine) as session:
+            insert_manuscript(session, manuscript)
 
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
@@ -358,7 +359,6 @@ class MainAgentState(BaseAgentState):
 class MainAgent(BaseModel):
     llm: Optional[ChatOpenAI] = None
     use_web: bool = False
-    session: Any = None
 
     @model_validator(mode='after')
     def setup_llm(self):
@@ -441,7 +441,7 @@ class MainAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        subgraph = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web, session=self.session).build()
+        subgraph = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web).build()
         message = trim_messages(
             state['messages'],
             strategy='last',

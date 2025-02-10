@@ -265,7 +265,7 @@ async def chat(
     )
 
     return StreamingResponse(
-        event_generator(project_uid, message, uploaded_files, current_text, current_user, chat_message_history, session),
+        event_generator(project_uid, message, uploaded_files, current_text, current_user, chat_message_history),
         media_type='text/event-stream'
     )
 
@@ -277,7 +277,6 @@ async def event_generator(
         current_text: str,
         user: User,
         chat_message_history: SQLChatMessageHistory,
-        session: Session
 ):
     try:
         if uploaded_files:
@@ -293,8 +292,13 @@ async def event_generator(
             ).to_sse()
         else:
             logger.info(f'{user.username}: {message}')
+            yield SSEMessage(
+                event=ChatEventType.STATUS,
+                data='唤醒智能体'
+            ).to_sse()
+
             llm = load_gpt4o_mini()
-            app = MainAgent(llm=llm, session=session, use_web=False).build()
+            app = MainAgent(llm=llm, use_web=False).build()
             full_response = ''
 
             async for event in app.astream_events(
@@ -307,8 +311,8 @@ async def event_generator(
                     version='v2',
                     exclude_names=['_write', 'RunnableSequence', 'RunnableLambda']
             ):
-                if event['name'] == 'ChatOpenAI':
-                    if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'main_router':
+                if event['event'] == 'on_chat_model_stream':
+                    if event['metadata']['langgraph_node'] and event['metadata']['langgraph_node'] == 'main_router':
                         data = event['data']
                         if data['chunk'].content:
                             full_response += data['chunk'].content
@@ -316,33 +320,62 @@ async def event_generator(
                                 event=ChatEventType.ANSWER,
                                 data=data['chunk'].content
                             ).to_sse()
+                    elif event['metadata']['langgraph_node'] and event['metadata']['langgraph_node'] == 'search_conclude':
+                        data = event['data']
+                        if data['chunk'].content:
+                            yield SSEMessage(
+                                event=ChatEventType.WRITE,
+                                data=data['chunk'].content
+                            ).to_sse()
 
-                    elif event['event'] == 'on_chat_model_end' and event['metadata']['langgraph_node'] == 'main_router':
+                elif event['event'] == 'on_chain_end':
+                    if event['name'] == 'main_route':
                         yield SSEMessage(
-                            event=ChatEventType.STATUS,
-                            data='chat end'
+                                event=ChatEventType.STATUS,
+                                data='chat_end'
+                            ).to_sse()
+                    elif event['name'] in ['search_conclude']:
+                        yield SSEMessage(
+                                event=ChatEventType.STATUS,
+                                data='write_end'
+                            ).to_sse()
+
+                elif event['event'] == 'on_tool_end':
+                    if event['name'] == 'modifier':
+                        modify: OptimizerOutput = event['data']['output']['parsed']
+                        yield SSEMessage(
+                            event=ChatEventType.MODIFY,
+                            data=modify.model_dump()
                         ).to_sse()
 
-                elif event['event'] == 'on_tool_end' and event['name'] == 'modifier':
-                    modify: OptimizerOutput = event['data']['output']['parsed']
-                    yield SSEMessage(
-                        event=ChatEventType.MODIFY,
-                        data=modify.model_dump()
-                    ).to_sse()
+                elif event['event'] == 'on_tool_start':
+                    if event['name'] == 'select_vecstore':
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS,
+                            data='自行决策选择知识库'
+                        ).to_sse()
+                    elif event['name'] == 'search_from_vecstore':
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS,
+                            data='搜索知识库'
+                        ).to_sse()
+                    elif event['name'] == 'modifier':
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS,
+                            data='分析修改策略'
+                        ).to_sse()
+                    else:
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS,
+                            data=event['name']
+                        ).to_sse()
 
-                elif event['event'] == 'on_chain_start' and event['name'] == 'search_conclude':
-                    yield SSEMessage(
-                        event=ChatEventType.STATUS,
-                        data='conclude'
-                    ).to_sse()
-
-                # if event['event'] == 'on_chat_model_stream' and event['metadata']['langgraph_node'] == 'search_conclude':
-                #     data = event['data']
-                #     if data['chunk'].content:
-                #         yield SSEMessage(
-                #             event=ChatEventType.WRITE,
-                #             data=data['chunk'].content
-                #         ).to_sse()
+                elif event['event'] == 'on_chain_start':
+                    if event['name'] == 'search_conclude':
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS,
+                            data='总结搜索结果'
+                        ).to_sse()
 
             logger.info(f'AI: {full_response}')
             chat_message_history.add_user_message(message)
