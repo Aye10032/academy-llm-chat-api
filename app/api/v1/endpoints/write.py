@@ -29,7 +29,7 @@ from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent
 from llm.core.chain import conclude_chat
 from llm.core.model import load_glm4_flash, load_gpt4o_mini
-from llm.tool.modify import OptimizerOutput
+from llm.tool.modify import OptimizerOutput, RewriterOutput
 
 router = APIRouter()
 
@@ -320,24 +320,19 @@ async def event_generator(
                                 event=ChatEventType.ANSWER,
                                 data=data['chunk'].content
                             ).to_sse()
-                    elif event['metadata']['langgraph_node'] and event['metadata']['langgraph_node'] == 'search_conclude':
-                        data = event['data']
-                        if data['chunk'].content:
-                            yield SSEMessage(
-                                event=ChatEventType.WRITE,
-                                data=data['chunk'].content
-                            ).to_sse()
+                    # elif event['metadata']['langgraph_node'] and event['metadata']['langgraph_node'] == 'search_conclude':
+                    #     data = event['data']
+                    #     if data['chunk'].content:
+                    #         yield SSEMessage(
+                    #             event=ChatEventType.WRITE,
+                    #             data=data['chunk'].content
+                    #         ).to_sse()
 
                 elif event['event'] == 'on_chain_end':
                     if event['name'] == 'main_route':
                         yield SSEMessage(
                                 event=ChatEventType.STATUS,
                                 data='chat_end'
-                            ).to_sse()
-                    elif event['name'] in ['search_conclude']:
-                        yield SSEMessage(
-                                event=ChatEventType.STATUS,
-                                data='write_end'
                             ).to_sse()
 
                 elif event['event'] == 'on_tool_end':
@@ -346,6 +341,12 @@ async def event_generator(
                         yield SSEMessage(
                             event=ChatEventType.MODIFY,
                             data=modify.model_dump()
+                        ).to_sse()
+                    elif event['name'] == 'rewriter':
+                        output: RewriterOutput = event['data']['output']['parsed']
+                        yield SSEMessage(
+                            event=ChatEventType.WRITE,
+                            data=f'\n\n---\n\n{output.rewrite}'
                         ).to_sse()
 
                 elif event['event'] == 'on_tool_start':

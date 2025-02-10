@@ -24,6 +24,7 @@ from llm.core.model import load_reranker, load_gpt4o
 from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH
 from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
+from llm.schemas import MarkdownMeta
 from llm.schemas.tokens import UsageMetadata
 from llm.tool.modify import Modifier, OptimizerOutput, Rewriter, RewriterOutput
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
@@ -301,7 +302,7 @@ class OptimizerAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        response = self.modifier.invoke({
+        response = self.rewriter.invoke({
             'query': tool_call['args']['query'],
             'current_text': state['current_text']
         })
@@ -354,6 +355,7 @@ class OptimizerAgent(BaseModel):
 class MainAgentState(BaseAgentState):
     current_text: str
     chat_history: Annotated[list[AnyMessage], add_messages]
+    sources: Annotated[list[dict[str, Document]], operator.add]
 
 
 class MainAgent(BaseModel):
@@ -456,8 +458,17 @@ class MainAgent(BaseModel):
             'project_uid': state['project_uid']
         })
 
+        new_sources = []
+        for doc in output['documents']:
+            meta_date = MarkdownMeta.model_validate(doc.metadata)
+            if not str(meta_date.source) in state['sources']:
+                new_sources.append({
+                    str(meta_date.source): doc
+                })
+
         return {
             'messages': [ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)],
+            'sources': new_sources,
             'price': output['price']
         }
 
