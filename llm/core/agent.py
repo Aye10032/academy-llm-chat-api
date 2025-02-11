@@ -23,7 +23,7 @@ from app.models import ManuscriptTable
 from app.schemas.manuscript import Manuscript
 from llm.core.model import load_reranker, load_gpt4o, load_gpt4o_mini
 from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH, \
-    GENERATOR_ROUTE_SYSTEM_ZH, GENERATOR_SYSTEM_ZH, GENERATOR_HUMAN_ZH
+    GENERATOR_ROUTE_SYSTEM_ZH, GENERATOR_SYSTEM_ZH, GENERATOR_HUMAN_ZH, KNOWLEDGE_MANAGE_SYSTEM_ZH
 from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
 from llm.schemas import MarkdownMeta
@@ -75,8 +75,13 @@ class KnowledgeManageAgent(BaseModel):
 
     def search_router(self, state: KnowledgeManageAgentState):
         llm_with_tool = self.router_llm.bind_tools(self.tools)
-        messages = state['messages']
-        response: AIMessage = llm_with_tool.invoke(messages)
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(content=KNOWLEDGE_MANAGE_SYSTEM_ZH),
+            MessagesPlaceholder(variable_name='history')
+        ])
+
+        chain = prompt | llm_with_tool
+        response: AIMessage = chain.invoke({'history': state['messages']})
 
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
@@ -629,11 +634,11 @@ class MainAgent(BaseModel):
             token_counter=len,
             max_tokens=5,
             start_on='human',
-            end_on='human',
+            end_on=('human', 'tool'),
             include_system=False
         )
         output: KnowledgeManageAgentState = subgraph.invoke({
-            'messages': message,
+            'messages': [HumanMessage(content=message[-1].content)],
             'project_uid': state['project_uid']
         })
 
