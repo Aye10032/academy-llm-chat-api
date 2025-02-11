@@ -603,7 +603,7 @@ class MainAgent(BaseModel):
             token_counter=len,
             max_tokens=5,
             start_on='human',
-            end_on='human',
+            end_on=('human', 'tool'),
             include_system=False
         )
 
@@ -638,7 +638,7 @@ class MainAgent(BaseModel):
             include_system=False
         )
         output: KnowledgeManageAgentState = subgraph.invoke({
-            'messages': [HumanMessage(content=message[-1].content)],
+            'messages': message,
             'project_uid': state['project_uid']
         })
 
@@ -671,7 +671,7 @@ class MainAgent(BaseModel):
             token_counter=len,
             max_tokens=5,
             start_on='human',
-            end_on='human',
+            end_on=('human', 'tool'),
             include_system=False
         )
         response = subgraph.invoke({

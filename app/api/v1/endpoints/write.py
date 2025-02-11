@@ -240,45 +240,8 @@ async def chat(
                 logger.error(f"Error processing file {file.filename}: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"处理文件时发生错误 {file.filename}") from e
 
-    async def generate_summary():
-        conclude = conclude_chat(chat_message_history)
-        now_time = datetime.now()
-        update_chat(
-            session,
-            chat_uid,
-            ChatSessionUpdate(
-                description=conclude.content,
-                update_time=now_time
-            )
-        )
-
-    # 自动生成总结
-    chat_info = get_chat(session, chat_uid)
-    if chat_info and chat_info.description == '新建对话' and chat_message_history.messages:
-        asyncio.create_task(generate_summary())
-
-    # 更新用户信息
-    update_user(
-        session,
-        str(current_user.email),
-        UserUpdate(last_project=project_uid)
-    )
-
-    return StreamingResponse(
-        event_generator(project_uid, message, uploaded_files, current_text, current_user, chat_message_history),
-        media_type='text/event-stream'
-    )
-
-
-async def event_generator(
-        project_uid: str,
-        message: str,
-        uploaded_files: list[dict[str, Any]],
-        current_text: str,
-        user: User,
-        chat_message_history: SQLChatMessageHistory,
-):
-    try:
+    async def event_generator():
+        # try:
         if uploaded_files:
             yield SSEMessage(
                 event=ChatEventType.STATUS,
@@ -291,11 +254,13 @@ async def event_generator(
                 data='文件已收到，请给出你的需求'
             ).to_sse()
         else:
-            logger.info(f'{user.username}: {message}')
+            logger.info(f'{current_user.username}: {message}')
             yield SSEMessage(
                 event=ChatEventType.STATUS,
                 data='唤醒智能体'
             ).to_sse()
+
+            await asyncio.sleep(0.1)
 
             cut_messages = trim_messages(
                 chat_message_history.messages,
@@ -403,20 +368,48 @@ async def event_generator(
             chat_message_history.add_user_message(message)
             chat_message_history.add_ai_message(full_response)
 
-    except Exception as e:
-        logger.error(f"Unexpected error in event generator: {str(e)}")
-        yield SSEMessage(
-            event=ChatEventType.ERROR,
-            data=str(e)
-        ).to_sse()
+        # except Exception as e:
+        #     logger.error(f"Unexpected error in event generator: {str(e)}")
+        #     yield SSEMessage(
+        #         event=ChatEventType.ERROR,
+        #         data=str(e)
+        #     ).to_sse()
+        #
+        # finally:
+        #     # 清理临时文件
+        #     for file_info in uploaded_files:
+        #         try:
+        #             file_path = file_info['path']
+        #             if os.path.exists(file_path):
+        #                 os.remove(file_path)
+        #                 logger.debug(f"Cleaned up temporary file: {file_path}")
+        #         except Exception as e:
+        #             logger.error(f"Error cleaning up file {file_path}: {str(e)}")
 
-    finally:
-        # 清理临时文件
-        for file_info in uploaded_files:
-            try:
-                file_path = file_info['path']
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    logger.debug(f"Cleaned up temporary file: {file_path}")
-            except Exception as e:
-                logger.error(f"Error cleaning up file {file_path}: {str(e)}")
+    async def generate_summary():
+        conclude = conclude_chat(chat_message_history)
+        now_time = datetime.now()
+        update_chat(
+            session,
+            chat_uid,
+            ChatSessionUpdate(
+                description=conclude.content,
+                update_time=now_time
+            )
+        )
+
+    # 自动生成总结
+    chat_info = get_chat(session, chat_uid)
+    if chat_info and chat_info.description == '新建对话' and chat_message_history.messages:
+        asyncio.create_task(generate_summary())
+
+    # 更新用户信息
+    update_user(
+        session,
+        str(current_user.email),
+        UserUpdate(last_project=project_uid)
+    )
+    return StreamingResponse(
+        event_generator(),
+        media_type='text/event-stream'
+    )
