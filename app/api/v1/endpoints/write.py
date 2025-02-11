@@ -321,13 +321,13 @@ async def event_generator(
                                 event=ChatEventType.ANSWER,
                                 data=data['chunk'].content
                             ).to_sse()
-                    # elif event['metadata']['langgraph_node'] and event['metadata']['langgraph_node'] == 'search_conclude':
-                    #     data = event['data']
-                    #     if data['chunk'].content:
-                    #         yield SSEMessage(
-                    #             event=ChatEventType.WRITE,
-                    #             data=data['chunk'].content
-                    #         ).to_sse()
+                    elif event['metadata']['langgraph_node'] and event['metadata']['langgraph_node'] == 'generator':
+                        data = event['data']
+                        if data['chunk'].content:
+                            yield SSEMessage(
+                                event=ChatEventType.WRITE,
+                                data=data['chunk'].content
+                            ).to_sse()
 
                 elif event['event'] == 'on_chain_end':
                     if event['name'] == 'main_route':
