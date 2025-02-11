@@ -298,7 +298,7 @@ async def event_generator(
             ).to_sse()
 
             llm = load_gpt4o_mini()
-            app = MainAgent(llm=llm, use_web=False).build()
+            app = MainAgent(router_llm=llm, use_web=False).build()
             full_response = ''
             await asyncio.sleep(0.1)
 

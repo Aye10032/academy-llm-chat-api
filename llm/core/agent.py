@@ -6,6 +6,7 @@ from uuid import uuid4
 from langchain_core.messages import SystemMessage, ToolMessage, ToolCall, AIMessage, AnyMessage, HumanMessage, trim_messages
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.documents import Document
+from langchain_core.runnables.graph import MermaidDrawMethod, CurveStyle
 from langchain_core.tools import BaseTool, tool
 from langchain_openai import ChatOpenAI
 from langgraph.constants import START
@@ -19,7 +20,7 @@ from tqdm import tqdm
 from app.crud.manuscript import insert_manuscript
 from app.db.session import engine
 from app.models import ManuscriptTable
-from llm.core.model import load_reranker, load_gpt4o
+from llm.core.model import load_reranker, load_gpt4o, load_gpt4o_mini
 from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH
 from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
@@ -42,7 +43,8 @@ class KnowledgeManageAgentState(BaseAgentState):
 class KnowledgeManageAgent(BaseModel):
     use_web: bool = True
     available_knowledge_bases: list[str] = Field(default_factory=list)
-    llm: ChatOpenAI
+    router_llm: ChatOpenAI
+    task_llm: ChatOpenAI
 
     tools: list[BaseTool] = Field(default_factory=list)
     select_tool: Optional[SelectKnowledgeBase] = None
@@ -51,7 +53,7 @@ class KnowledgeManageAgent(BaseModel):
 
     @model_validator(mode='after')
     def setup_tools(self):
-        self.select_tool = SelectKnowledgeBase(llm=self.llm, available_knowledge_bases=self.available_knowledge_bases)
+        self.select_tool = SelectKnowledgeBase(llm=self.router_llm, available_knowledge_bases=self.available_knowledge_bases)
         self.rag_search_tool = RAGSearchTool()
         self.web_search_tool = WebSearchTool()
 
@@ -70,14 +72,14 @@ class KnowledgeManageAgent(BaseModel):
         return self
 
     def search_router(self, state: KnowledgeManageAgentState):
-        llm_with_tool = self.llm.bind_tools(self.tools)
+        llm_with_tool = self.router_llm.bind_tools(self.tools)
         messages = state['messages']
         response: AIMessage = llm_with_tool.invoke(messages)
 
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
             'messages': [response],
-            'price': token_usage.calculate_cost(self.llm)
+            'price': token_usage.calculate_cost(self.router_llm)
         }
 
     def choose_tool(self, state: KnowledgeManageAgentState) -> Literal['web_tool', 'rag_select', 'rag_search', '__end__']:
@@ -112,7 +114,7 @@ class KnowledgeManageAgent(BaseModel):
                         'messages': [
                             ToolMessage('没有合适的向量数据库，向量数据库查询失败，请尝试联网查询。', tool_call_id=tool_call_id)
                         ],
-                        'price': token_usage.calculate_cost(self.llm)
+                        'price': token_usage.calculate_cost(self.router_llm)
                     }, goto='search_router'
                 )
             else:
@@ -124,7 +126,7 @@ class KnowledgeManageAgent(BaseModel):
                                 tool_call_id=tool_call_id
                             )
                         ],
-                        'price': token_usage.calculate_cost(self.llm)
+                        'price': token_usage.calculate_cost(self.router_llm)
                     },
                     goto='search_router'
                 )
@@ -143,7 +145,7 @@ class KnowledgeManageAgent(BaseModel):
                         ]
                     )
                 ],
-                'price': token_usage.calculate_cost(self.llm)
+                'price': token_usage.calculate_cost(self.router_llm)
             },
             goto='rag_search'
         )
@@ -208,7 +210,7 @@ class KnowledgeManageAgent(BaseModel):
             SystemMessage(CONCLUDE_DOCUMENTS_SYSTEM_ZH),
             ('human', CONCLUDE_DOCUMENTS_HUMAN_ZH)
         ])
-        chain = prompt | self.llm
+        chain = prompt | self.task_llm
         response = chain.invoke({
             'question': origin_question,
             'doc_str': format_docs(clean_output, 'zh')
@@ -230,7 +232,7 @@ class KnowledgeManageAgent(BaseModel):
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
             'messages': [AIMessage(content=f'我已经找到了相关的资料，并将总结的资料保存到了文件《{title.strip("#").strip()}》中。')],
-            'price': token_usage.calculate_cost(self.llm)
+            'price': token_usage.calculate_cost(self.router_llm)
         }
 
     def build(self) -> CompiledStateGraph:
@@ -254,21 +256,22 @@ class OptimizerAgentState(BaseAgentState):
 
 
 class OptimizerAgent(BaseModel):
-    llm: ChatOpenAI
+    router_llm: ChatOpenAI
+    task_llm: ChatOpenAI
 
     modifier: Optional[Modifier] = None
     rewriter: Optional[Rewriter] = None
 
     @model_validator(mode='after')
     def setup_tools(self):
-        self.modifier = Modifier(llm=self.llm)
-        self.rewriter = Rewriter(llm=self.llm)
+        self.modifier = Modifier(llm=self.task_llm)
+        self.rewriter = Rewriter(llm=self.task_llm)
 
         return self
 
     def optimizer_route_node(self, state: OptimizerAgentState):
         tools = [self.modifier, self.rewriter]
-        llm_with_tool = self.llm.bind_tools(tools)
+        llm_with_tool = self.router_llm.bind_tools(tools)
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content=OPTIMIZER_SYSTEM_ZH),
             MessagesPlaceholder(variable_name='history')
@@ -280,7 +283,7 @@ class OptimizerAgent(BaseModel):
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
             'messages': [response],
-            'price': token_usage.calculate_cost(self.llm)
+            'price': token_usage.calculate_cost(self.router_llm)
         }
 
     def optimizer_route(self, state: OptimizerAgentState) -> Literal['rewriter', 'modifier', '__end__']:
@@ -314,7 +317,7 @@ class OptimizerAgent(BaseModel):
                     ToolMessage(f'我已经完成了重写：{modify_result.explanation}', tool_call_id=tool_call_id)
                 ],
                 'current_text': modify_result.rewrite,
-                'price': token_usage.calculate_cost(self.llm)
+                'price': token_usage.calculate_cost(self.router_llm)
             }, goto='optimizer_router'
         )
 
@@ -335,7 +338,7 @@ class OptimizerAgent(BaseModel):
                 'messages': [
                     ToolMessage(f'我已经完成了修改：{str(modify_result.model_dump())}', tool_call_id=tool_call_id)
                 ],
-                'price': token_usage.calculate_cost(self.llm)
+                'price': token_usage.calculate_cost(self.router_llm)
             }, goto='optimizer_router'
         )
 
@@ -358,13 +361,17 @@ class MainAgentState(BaseAgentState):
 
 
 class MainAgent(BaseModel):
-    llm: Optional[ChatOpenAI] = None
+    router_llm: Optional[ChatOpenAI] = None
+    task_llm: Optional[ChatOpenAI] = None
     use_web: bool = False
 
     @model_validator(mode='after')
     def setup_llm(self):
-        if self.llm is None:
-            self.llm = load_gpt4o()
+        if self.router_llm is None:
+            self.router_llm = load_gpt4o()
+
+        if self.task_llm is None:
+            self.task_llm = load_gpt4o_mini()
 
     @staticmethod
     @tool
@@ -395,7 +402,7 @@ class MainAgent(BaseModel):
             self, state: MainAgentState
     ):
         tools = [self.generate_task, self.optimize_task, self.search_task]
-        llm_with_tool = self.llm.bind_tools(tools)
+        llm_with_tool = self.router_llm.bind_tools(tools)
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content=AGENT_SYSTEM_ZH),
             MessagesPlaceholder(variable_name='history')
@@ -414,7 +421,7 @@ class MainAgent(BaseModel):
 
         return {
             'messages': [response],
-            'price': token_usage.calculate_cost(self.llm)
+            'price': token_usage.calculate_cost(self.router_llm)
         }
 
     def main_route(self, state: MainAgentState) -> Literal['text_generator', 'text_optimizer', 'knowledge_searcher', '__end__']:
@@ -442,7 +449,12 @@ class MainAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        subgraph = KnowledgeManageAgent(llm=self.llm, use_web=self.use_web).build()
+        subgraph = KnowledgeManageAgent(
+            router_llm=self.router_llm,
+            task_llm=self.task_llm,
+            use_web=self.use_web
+        ).build()
+
         message = trim_messages(
             state['messages'],
             strategy='last',
@@ -476,7 +488,10 @@ class MainAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        subgraph = OptimizerAgent(llm=self.llm).build()
+        subgraph = OptimizerAgent(
+            router_llm=self.router_llm,
+            task_llm=self.task_llm
+        ).build()
         message = trim_messages(
             state['messages'],
             strategy='last',
@@ -509,3 +524,23 @@ class MainAgent(BaseModel):
         graph.add_edge('knowledge_searcher', 'main_router')
 
         return graph.compile()
+
+    def visualize(self, file_path: str) -> None:
+        graph = StateGraph(MainAgentState)
+        graph.add_node('main_router', self.main_route_node)
+        graph.add_node('text_generator', OptimizerAgent(router_llm=self.router_llm, task_llm=self.task_llm).build())
+        graph.add_node('text_optimizer', OptimizerAgent(router_llm=self.router_llm, task_llm=self.task_llm).build())
+        graph.add_node('knowledge_searcher', KnowledgeManageAgent(router_llm=self.router_llm, task_llm=self.task_llm).build())
+
+        graph.add_edge(START, 'main_router')
+        graph.add_conditional_edges('main_router', self.main_route)
+        graph.add_edge('text_optimizer', 'main_router')
+        graph.add_edge('knowledge_searcher', 'main_router')
+        graph.add_edge('text_generator', 'main_router')
+
+        temp_app = graph.compile()
+        temp_app.get_graph(xray=True).draw_mermaid_png(
+            output_file_path=file_path,
+            draw_method=MermaidDrawMethod.PYPPETEER,
+            curve_style=CurveStyle.BASIS
+        )
