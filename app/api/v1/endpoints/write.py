@@ -8,7 +8,7 @@ import os
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
 from langchain_community.chat_message_histories import SQLChatMessageHistory
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, trim_messages
 from loguru import logger
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -297,13 +297,24 @@ async def event_generator(
                 data='唤醒智能体'
             ).to_sse()
 
+            cut_messages = trim_messages(
+                chat_message_history.messages,
+                strategy='last',
+                token_counter=len,
+                max_tokens=5,
+                start_on='human',
+                end_on='ai',
+                include_system=False
+            )
+            cut_messages.append(HumanMessage(content=message))
+
             app = MainAgent(use_web=False).build()
             full_response = ''
             await asyncio.sleep(0.1)
 
             async for event in app.astream_events(
                     {
-                        'messages': [HumanMessage(content=message)],
+                        'messages': cut_messages,
                         'current_text': current_text,
                         'project_uid': project_uid
                     },
