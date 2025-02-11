@@ -254,7 +254,7 @@ async def chat(
 
     # 自动生成总结
     chat_info = get_chat(session, chat_uid)
-    if chat_info.description == '新建对话' and chat_message_history.messages:
+    if chat_info and chat_info.description == '新建对话' and chat_message_history.messages:
         asyncio.create_task(generate_summary())
 
     # 更新用户信息
@@ -297,8 +297,7 @@ async def event_generator(
                 data='唤醒智能体'
             ).to_sse()
 
-            llm = load_gpt4o_mini()
-            app = MainAgent(router_llm=llm, use_web=False).build()
+            app = MainAgent(use_web=False).build()
             full_response = ''
             await asyncio.sleep(0.1)
 
@@ -332,9 +331,9 @@ async def event_generator(
                 elif event['event'] == 'on_chain_end':
                     if event['name'] == 'main_route':
                         yield SSEMessage(
-                                event=ChatEventType.STATUS,
-                                data='chat_end'
-                            ).to_sse()
+                            event=ChatEventType.STATUS,
+                            data='chat_end'
+                        ).to_sse()
 
                 elif event['event'] == 'on_tool_end':
                     if event['name'] == 'modifier':
