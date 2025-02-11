@@ -169,9 +169,9 @@ async def add_new_manuscript(
 @router.post('/save_manuscript')
 async def save_manuscript(
         session: SessionDep,
-        uid: str,
-        content: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+        current_user: Annotated[UserTable, Depends(get_current_active_user)],
+        uid: str = Form(...),
+        content: str = Form(...)
 ) -> str:
     now_time = datetime.now()
     last_manuscript = get_manuscript(session, uid)
