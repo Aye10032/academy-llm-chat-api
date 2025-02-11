@@ -31,6 +31,11 @@ def get_manuscripts_list(session: Session, project_uid: str):
     result = session.exec(statement)
     return result.all()
 
+def get_drafts(session: Session, project_uid: str):
+    statement = (select(ManuscriptTable)
+                 .where(ManuscriptTable.project_uid == project_uid)
+                 .where(ManuscriptTable.is_draft == True))
+    return session.exec(statement).all()
 
 def get_manuscript(session: Session, uid: str) -> Optional[ManuscriptTable]:
     statement = (select(ManuscriptTable)

@@ -17,11 +17,13 @@ from pydantic import BaseModel, model_validator, Field
 from sqlmodel import Session
 from tqdm import tqdm
 
-from app.crud.manuscript import insert_manuscript
+from app.crud.manuscript import insert_manuscript, get_drafts
 from app.db.session import engine
 from app.models import ManuscriptTable
+from app.schemas.manuscript import Manuscript
 from llm.core.model import load_reranker, load_gpt4o, load_gpt4o_mini
-from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH
+from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH, \
+    GENERATOR_ROUTE_SYSTEM_ZH, GENERATOR_SYSTEM_ZH, GENERATOR_HUMAN_ZH
 from llm.file_loader.web import JinaWebLoader
 from llm.rag.retriever import format_docs
 from llm.schemas import MarkdownMeta
@@ -354,6 +356,145 @@ class OptimizerAgent(BaseModel):
         return graph.compile()
 
 
+class GenerateAgentState(BaseAgentState):
+    write_request: str
+    current_text: str
+    information_list: Annotated[list[Manuscript], operator.add]
+
+
+class GenerateAgent(BaseModel):
+    router_llm: ChatOpenAI
+    task_llm: ChatOpenAI
+
+    @staticmethod
+    @tool
+    def analyzer():
+        """本地知识检索工具
+        对于需要比较复杂知识的写作任务，可以先调用此工具。他会浏览本地的知识库并分析是否已经有查找好的可用于本次写作任务的资料。
+        """
+        return
+
+    @staticmethod
+    @tool
+    def generator():
+        """文本生成工具
+        此工具能够根据用户的需要生成符合要求的文本"""
+        return
+
+    def generator_route_node(self, state: GenerateAgentState):
+        last_message = state['messages'][-1].content
+
+        tools = [self.analyzer]
+        llm_with_tool = self.router_llm.bind_tools(tools)
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(content=GENERATOR_ROUTE_SYSTEM_ZH),
+            MessagesPlaceholder(variable_name='history')
+        ])
+
+        chain = prompt | llm_with_tool
+        response = chain.invoke({'history': state['messages']})
+
+        token_usage = UsageMetadata.create(response.usage_metadata)
+
+        if 'write_request' not in state:
+            return {
+                'write_request': last_message,
+                'current_text': '',
+                'messages': [response],
+                'price': token_usage.calculate_cost(self.router_llm)
+            }
+        else:
+            return {
+                'messages': [response],
+                'price': token_usage.calculate_cost(self.router_llm)
+            }
+
+    def generator_route(self, state: GenerateAgentState) -> Literal['analyzer', 'generator', '__end__']:
+        messages = state['messages']
+        tool_calls = messages[-1].tool_calls
+
+        if tool_calls:
+            tool_call = tool_calls[0]
+            if tool_call['name'] == self.analyzer.name:
+                return 'analyzer'
+            elif tool_call['name'] == self.generator.name:
+                return 'generator'
+        else:
+            return '__end__'
+
+    def analyzer_node(self, state: GenerateAgentState) -> Command[Literal['generator', 'generator_router']]:
+        tool_call: ToolCall = state['messages'][-1].tool_calls[0]
+        tool_call_id = tool_call['id']
+
+        with Session(engine) as session:
+            drafts = get_drafts(session, state['project_uid'])
+
+        reranker = load_reranker()
+        clean_drafts = reranker.compress_manuscripts(drafts, state['write_request'])
+
+        if clean_drafts:
+            state['messages'].pop(-1)
+            return Command(
+                update={
+                    'messages': [
+                        AIMessage(
+                            '', tool_calls=[
+                                ToolCall(
+                                    name=self.generator.name,
+                                    args={},
+                                    id=tool_call_id
+                                )
+                            ]
+                        )
+                    ],
+                    'information_list': clean_drafts
+                },
+                goto='generator'
+            )
+
+        return Command(
+            update={
+                'messages': [ToolMessage('本地没有这方面的资料，请你提供给我一些对于这个写作有帮助的资料', tool_call_id=tool_call_id)]
+            },
+            goto='generator_router'
+        )
+
+    def generator_node(self, state: GenerateAgentState):
+        tool_call: ToolCall = state['messages'][-1].tool_calls[0]
+        tool_call_id = tool_call['id']
+
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(GENERATOR_SYSTEM_ZH),
+            ('human', GENERATOR_HUMAN_ZH)
+        ])
+
+        chain = prompt | self.task_llm
+        response = chain.invoke({
+            'question': state['write_request'],
+            'information': '\n\n'.join([
+                draft.content
+                for draft in state['information_list']
+            ])
+        })
+
+        return {
+            'messages': [ToolMessage('我已经完成了写作任务', tool_call_id=tool_call_id)],
+            'current_text': response.content
+        }
+
+    def build(self) -> CompiledStateGraph:
+        graph = StateGraph(GenerateAgentState)
+        graph.add_node('generator_router', self.generator_route_node)
+        graph.add_node('analyzer', self.analyzer_node)
+        graph.add_node('generator', self.generator_node)
+
+        graph.add_edge(START, 'generator_router')
+        graph.add_conditional_edges('generator_router', self.generator_route)
+        graph.add_edge('generator', 'generator_router')
+
+        return graph.compile()
+
+
 class MainAgentState(BaseAgentState):
     current_text: str
     chat_history: Annotated[list[AnyMessage], add_messages]
@@ -442,7 +583,34 @@ class MainAgent(BaseModel):
         return '__end__'
 
     def text_generator_agent(self, state: MainAgentState):
-        return {}
+        message: AIMessage = state['messages'][-1]
+        tool_call = message.tool_calls[0]
+        tool_call_id = tool_call['id']
+
+        subgraph = GenerateAgent(
+            router_llm=self.router_llm,
+            task_llm=self.task_llm
+        ).build()
+
+        message = trim_messages(
+            state['messages'],
+            strategy='last',
+            token_counter=len,
+            max_tokens=5,
+            start_on='human',
+            end_on='human',
+            include_system=False
+        )
+
+        output: GenerateAgentState = subgraph.invoke({
+            'messages': message,
+            'project_uid': state['project_uid']
+        })
+        return {
+            'messages': [ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)],
+            'current_text': output['current_text'],
+            'price': output['price']
+        }
 
     def knowledge_searcher_agent(self, state: MainAgentState):
         message: AIMessage = state['messages'][-1]
@@ -522,13 +690,14 @@ class MainAgent(BaseModel):
         graph.add_conditional_edges('main_router', self.main_route)
         graph.add_edge('text_optimizer', 'main_router')
         graph.add_edge('knowledge_searcher', 'main_router')
+        graph.add_edge('text_generator', 'main_router')
 
         return graph.compile()
 
     def visualize(self, file_path: str) -> None:
         graph = StateGraph(MainAgentState)
         graph.add_node('main_router', self.main_route_node)
-        graph.add_node('text_generator', OptimizerAgent(router_llm=self.router_llm, task_llm=self.task_llm).build())
+        graph.add_node('text_generator', GenerateAgent(router_llm=self.router_llm, task_llm=self.task_llm).build())
         graph.add_node('text_optimizer', OptimizerAgent(router_llm=self.router_llm, task_llm=self.task_llm).build())
         graph.add_node('knowledge_searcher', KnowledgeManageAgent(router_llm=self.router_llm, task_llm=self.task_llm).build())
 

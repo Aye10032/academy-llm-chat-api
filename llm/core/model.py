@@ -25,6 +25,7 @@ from transformers import (
 )
 
 from app.core.config import get_settings
+from app.schemas.manuscript import Manuscript
 from app.utils.cache import cache_model
 from app.utils.network import clean_html
 
@@ -314,6 +315,41 @@ class BgeReranker(BaseModel):
         return await run_in_executor(
             None, self.compress_documents, documents, query, callbacks
         )
+
+    def compress_manuscripts(
+            self,
+            manuscripts:list[Manuscript],
+            query: str,
+            callbacks: Optional[Callbacks] = None,
+    ):
+        sentence_pairs = [
+            (query, draft.title)
+            for draft in manuscripts
+            if isinstance(draft, Manuscript)
+        ]
+        rerank_scores = []
+
+        for i in range(0, len(sentence_pairs), 10):
+            if i + 10 >= len(sentence_pairs):
+                batch_pairs = sentence_pairs[i:]
+            else:
+                batch_pairs = sentence_pairs[i:i + 10]
+
+            batch_size: int = self.encode_kwargs.get('batch_size', 256)
+            max_length: int = self.encode_kwargs.get('max_length', 512)
+            normalize: bool = self.encode_kwargs.get('normalize', False)
+            batch_scores = self.compute_score(batch_pairs, batch_size, max_length, normalize)
+            rerank_scores.extend(batch_scores)
+
+        rerank_results = list(zip(rerank_scores, manuscripts))
+        rerank_results = sorted(rerank_results, key=lambda x: x[0], reverse=True)
+
+        final_results = [
+            r[1]
+            for r in rerank_results
+            if r[0] > self.low_score
+        ]
+        return final_results
 
 
 class ReaderLM(BaseModel):
