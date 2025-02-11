@@ -377,6 +377,16 @@ async def event_generator(
                             event=ChatEventType.STATUS,
                             data='总结搜索结果'
                         ).to_sse()
+                    elif event['name'] == 'analyzer':
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS,
+                            data='整理写作资料'
+                        ).to_sse()
+                    elif event['name'] == 'generator':
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS,
+                            data='文本创作'
+                        ).to_sse()
 
             logger.info(f'AI: {full_response}')
             chat_message_history.add_user_message(message)
