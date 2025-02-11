@@ -1,6 +1,6 @@
 import operator
 
-from typing import Annotated, Literal, Optional, Any
+from typing import Annotated, Literal, Optional
 from uuid import uuid4
 
 from langchain_core.messages import SystemMessage, ToolMessage, ToolCall, AIMessage, AnyMessage, HumanMessage, trim_messages
@@ -19,7 +19,6 @@ from tqdm import tqdm
 from app.crud.manuscript import insert_manuscript
 from app.db.session import engine
 from app.models import ManuscriptTable
-from app.schemas.manuscript import Manuscript
 from llm.core.model import load_reranker, load_gpt4o
 from llm.core.template import CONCLUDE_DOCUMENTS_SYSTEM_ZH, OPTIMIZER_SYSTEM_ZH, CONCLUDE_DOCUMENTS_HUMAN_ZH, AGENT_SYSTEM_ZH
 from llm.file_loader.web import JinaWebLoader
@@ -230,7 +229,7 @@ class KnowledgeManageAgent(BaseModel):
 
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
-            'messages': [AIMessage(content=f'我已经将总结的资料保存到了文件《{title}》中。')],
+            'messages': [AIMessage(content=f'我已经找到了相关的资料，并将总结的资料保存到了文件《{title.strip("#").strip()}》中。')],
             'price': token_usage.calculate_cost(self.llm)
         }
 

@@ -300,6 +300,7 @@ async def event_generator(
             llm = load_gpt4o_mini()
             app = MainAgent(llm=llm, use_web=False).build()
             full_response = ''
+            await asyncio.sleep(0.1)
 
             async for event in app.astream_events(
                     {
