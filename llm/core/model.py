@@ -318,7 +318,7 @@ class BgeReranker(BaseModel):
 
     def compress_manuscripts(
             self,
-            manuscripts:list[Manuscript],
+            manuscripts: list[Manuscript],
             query: str,
             callbacks: Optional[Callbacks] = None,
     ):
@@ -543,16 +543,18 @@ def load_gpt4o() -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
         http_client = httpx.Client(proxy=get_settings().server.network.PROXY)
         llm = ChatOpenAI(
-            model_name='gpt-4o',
+            model='gpt-4o',
             http_client=http_client,
             temperature=0.4,
-            openai_api_key=llm_cfg.openai.API_KEY
+            base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
+            api_key=llm_cfg.openai.API_KEY
         )
     else:
         llm = ChatOpenAI(
-            model_name='gpt-4o',
+            model='gpt-4o',
             temperature=0.4,
-            openai_api_key=llm_cfg.openai.API_KEY
+            base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
+            api_key=llm_cfg.openai.API_KEY
         )
     return llm
 
@@ -561,25 +563,27 @@ def load_gpt4o_mini() -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
         http_client = httpx.Client(proxy=get_settings().server.network.PROXY)
         llm = ChatOpenAI(
-            model_name='gpt-4o-mini',
+            model='gpt-4o-mini',
             http_client=http_client,
             temperature=0.4,
-            openai_api_key=llm_cfg.openai.API_KEY
+            base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
+            api_key=llm_cfg.openai.API_KEY
         )
     else:
         llm = ChatOpenAI(
-            model_name='gpt-4o-mini',
+            model='gpt-4o-mini',
             temperature=0.4,
-            openai_api_key=llm_cfg.openai.API_KEY
+            base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
+            api_key=llm_cfg.openai.API_KEY
         )
     return llm
 
 
 def load_glm4_flash() -> ChatOpenAI:
     llm = ChatOpenAI(
-        model_name='glm-4-flash',
-        openai_api_base=llm_cfg.zhipu.BASE_URL,
-        openai_api_key=llm_cfg.zhipu.API_KEY,
+        model='glm-4-flash',
+        base_url=llm_cfg.zhipu.BASE_URL,
+        api_key=llm_cfg.zhipu.API_KEY,
         temperature=0.05,
     )
 
@@ -588,9 +592,9 @@ def load_glm4_flash() -> ChatOpenAI:
 
 def load_glm4_air() -> ChatOpenAI:
     llm = ChatOpenAI(
-        model_name='glm-4-air',
-        openai_api_base=llm_cfg.zhipu.BASE_URL,
-        openai_api_key=llm_cfg.zhipu.API_KEY,
+        model='glm-4-air',
+        base_url=llm_cfg.zhipu.BASE_URL,
+        api_key=llm_cfg.zhipu.API_KEY,
         temperature=0.05,
     )
 
@@ -599,9 +603,9 @@ def load_glm4_air() -> ChatOpenAI:
 
 def load_deepseek_v3(temperature: float = 0.0) -> ChatOpenAI:
     llm = ChatOpenAI(
-        model_name='deepseek-chat',
-        openai_api_base=llm_cfg.deepseek.BASE_URL,
-        openai_api_key=llm_cfg.deepseek.API_KEY,
+        model='deepseek-ai/DeepSeek-V3',
+        base_url=llm_cfg.deepseek.BASE_URL,
+        api_key=llm_cfg.deepseek.API_KEY,
         temperature=temperature
     )
 
@@ -610,9 +614,9 @@ def load_deepseek_v3(temperature: float = 0.0) -> ChatOpenAI:
 
 def load_deepseek_r1() -> ChatOpenAI:
     llm = ChatOpenAI(
-        model_name='deepseek-reasoner',
-        openai_api_base=llm_cfg.deepseek.BASE_URL,
-        openai_api_key=llm_cfg.deepseek.API_KEY
+        model='deepseek-reasoner',
+        base_url=llm_cfg.deepseek.BASE_URL,
+        api_key=llm_cfg.deepseek.API_KEY
     )
 
     return llm
