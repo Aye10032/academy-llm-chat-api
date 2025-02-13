@@ -5,7 +5,7 @@ from sqlmodel import SQLModel
 
 
 class ChatSession(SQLModel):
-    chat_uid: str
+    uid: str
     parent_uid: str
     user_email: str
     description: str = '新建对话'

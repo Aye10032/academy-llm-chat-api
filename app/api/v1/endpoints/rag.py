@@ -11,8 +11,8 @@ from loguru import logger
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
+import app.crud.chat_session as chat_crud
 from app.core.security import get_current_active_user
-from app.crud.chat_session import insert_chat, get_chat_list, get_chat, update_chat
 from app.crud.knowledge_base import get_knowledge_bases, get_knowledge_base
 from app.crud.user import update_user
 from app.db.session import SessionDep, engine
@@ -57,17 +57,8 @@ async def read_knowledge_bases(
     return get_knowledge_bases(session, offset, limit)
 
 
-@router.get('/chats', response_model=list[ChatSession])
-async def get_chats(
-        session: SessionDep,
-        knowledge_base_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
-    return get_chat_list(session, knowledge_base_uid)
-
-
 @router.patch('/new_chat/{knowledge_base_uid}', description='在对应知识库下新建对话')
-async def add_new_chat(
+async def insert_chat(
         session: SessionDep,
         knowledge_base_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
@@ -75,27 +66,50 @@ async def add_new_chat(
     now_time = datetime.now()
 
     new_chat = ChatSessionTable(
-        chat_uid=str(uuid4()),
+        uid=str(uuid4()),
         parent_uid=knowledge_base_uid,
         user_email=str(current_user.email),
         create_time=now_time,
         update_time=now_time
     )
-    new_chat = insert_chat(session, new_chat)
-    return new_chat.chat_uid
+    new_chat = chat_crud.insert(session, new_chat)
+    return new_chat.uid
 
 
-@router.get('/chat_info/{chat_uid}', response_model=ChatSession)
-async def get_chat_info(
+@router.delete('/delete_chat/{chat_uid}')
+async def delete_chat(
         session: SessionDep,
         chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    return get_chat(session, chat_uid)
+    chat_crud.delete(session, chat_uid)
+    chat_message_history = SQLChatMessageHistory(
+        session_id=chat_uid,
+        connection=engine
+    )
+    chat_message_history.clear()
+
+
+@router.get('/chats', response_model=list[ChatSession])
+async def get_chats(
+        session: SessionDep,
+        knowledge_base_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return chat_crud.get_list(session, knowledge_base_uid)
+
+
+@router.get('/chat_info/{chat_uid}', response_model=ChatSession)
+async def get_chat(
+        session: SessionDep,
+        chat_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return chat_crud.get(session, chat_uid)
 
 
 @router.get('/chat/{chat_uid}')
-async def load_chat(
+async def get_chat_history(
         chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
@@ -189,7 +203,7 @@ async def chat(
     async def generate_summary():
         conclude = conclude_chat(chat_message_history)
         now_time = datetime.now()
-        update_chat(
+        chat_crud.update(
             session,
             chat_uid,
             ChatSessionUpdate(
@@ -199,7 +213,7 @@ async def chat(
         )
 
     # 自动生成总结
-    chat_info = get_chat(session, chat_uid)
+    chat_info = chat_crud.get(session, chat_uid)
     if chat_info.description == '新建对话' and chat_message_history.messages:
         asyncio.create_task(generate_summary())
 

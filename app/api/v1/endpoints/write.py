@@ -2,7 +2,8 @@ import asyncio
 import json
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, List, Union, Any
+from pathlib import Path
+from typing import Annotated, Union
 from uuid import uuid4
 import os
 
@@ -11,24 +12,22 @@ from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain_core.messages import HumanMessage, trim_messages
 from loguru import logger
 from pydantic import BaseModel
-from sqlmodel import Session
-from starlette.responses import StreamingResponse
+from starlette.responses import StreamingResponse, FileResponse
 
+import app.crud.chat_session as chat_crud
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
-from app.crud.chat_session import insert_chat, get_chat_list, update_chat, get_chat
-from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript, update_manuscript
+from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
 from app.crud.user import update_user
 from app.crud.write_project import insert_project, get_project_list, get_project, update_project
 from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
 from app.schemas.manuscript import ManuscriptPublic, Manuscript, ManuscriptUpdate
-from app.schemas.user import User, UserUpdate
+from app.schemas.user import UserUpdate
 from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent
 from llm.core.chain import conclude_chat
-from llm.core.model import load_glm4_flash, load_gpt4o_mini
 from llm.tool.modify import OptimizerOutput, RewriterOutput
 
 router = APIRouter()
@@ -50,6 +49,13 @@ class SSEMessage(BaseModel):
     def to_sse(self) -> str:
         """转换为 SSE 格式的消息"""
         return f"event: {self.event.value}\ndata: {json.dumps(self.data, ensure_ascii=False)}\n\n"
+
+
+class PDFInfo(BaseModel):
+    file_name: str
+    file_size: int
+    file_url: str
+    upload_time: datetime
 
 
 @router.get(
@@ -94,7 +100,7 @@ async def get_chats(
         project_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    return get_chat_list(session, project_uid)
+    return chat_crud.get_list(session, project_uid)
 
 
 @router.patch('/new_chat')
@@ -106,7 +112,7 @@ async def add_new_chat(
     now_time = datetime.now()
 
     new_chat = ChatSessionTable(
-        chat_uid=str(uuid4()),
+        uid=str(uuid4()),
         parent_uid=project_uid,
         description='新建对话',
         user_email=str(current_user.email),
@@ -115,8 +121,8 @@ async def add_new_chat(
         update_time=now_time
     )
 
-    new_chat = insert_chat(session, new_chat)
-    return new_chat.chat_uid
+    new_chat = chat_crud.insert(session, new_chat)
+    return new_chat.uid
 
 
 @router.get('/chat/{chat_uid}')
@@ -203,6 +209,7 @@ async def chat(
         session: SessionDep,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
         project_uid: str = Form(...),
+        graph_ckpt: str = Form(...),
         chat_uid: str = Form(...),
         message: str = Form(...),
         current_text: str = Form(None),
@@ -389,7 +396,7 @@ async def chat(
     async def generate_summary():
         conclude = conclude_chat(chat_message_history)
         now_time = datetime.now()
-        update_chat(
+        chat_crud.update(
             session,
             chat_uid,
             ChatSessionUpdate(
@@ -399,7 +406,7 @@ async def chat(
         )
 
     # 自动生成总结
-    chat_info = get_chat(session, chat_uid)
+    chat_info = chat_crud.get(session, chat_uid)
     if chat_info and chat_info.description == '新建对话' and chat_message_history.messages:
         asyncio.create_task(generate_summary())
 
@@ -412,4 +419,71 @@ async def chat(
     return StreamingResponse(
         event_generator(),
         media_type='text/event-stream'
+    )
+
+
+@router.get(
+    '/pdf_files',
+    description='获取可供阅读的PDF文件列表',
+    response_model=list[PDFInfo]
+)
+async def get_pdf_files(
+        session: SessionDep,
+        project_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)],
+        offset: int = 0,
+        limit: Annotated[int, Query(le=20)] = 20,
+):
+    """
+    获取项目中的PDF文件列表
+    """
+    settings = get_settings()
+    pdf_dir = os.path.join(settings.server.TEMP_DIR, project_uid)
+
+    if not os.path.exists(pdf_dir):
+        return []
+
+    pdf_files = []
+    for file_name in os.listdir(pdf_dir):
+        if file_name.lower().endswith('.pdf'):
+            file_path = os.path.join(pdf_dir, file_name)
+            file_stat = os.stat(file_path)
+
+            # 构建文件URL
+            file_url = f"/api/v1/write/pdf/{project_uid}/{file_name}"
+
+            pdf_files.append(PDFInfo(
+                file_name=file_name,
+                file_size=file_stat.st_size,
+                file_url=file_url,
+                upload_time=datetime.fromtimestamp(file_stat.st_mtime)
+            ))
+
+    # 按上传时间倒序排序
+    pdf_files.sort(key=lambda x: x.upload_time, reverse=True)
+
+    # 分页
+    start = offset
+    end = offset + limit
+    return pdf_files[start:end]
+
+
+@router.get(
+    '/pdf',
+    description='获取PDF文件内容'
+)
+async def get_pdf_file(
+        file_path: str = Form(...)
+):
+    """
+    获取PDF文件内容
+    """
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return FileResponse(
+        file_path,
+        media_type='application/pdf',
+        filename=Path(file_path).name
     )
