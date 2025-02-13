@@ -5,8 +5,8 @@ from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, tr
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableLambda, RunnableSerializable
 
-from llm.core.model import load_gpt4o_mini
-from llm.core.template import RAG_SYSTEM_EN, RAG_HUMAN_EN
+from llm.core.model import load_gpt4o_mini, load_deepseek_v3
+from llm.core.template import RAG_SYSTEM_ZH, RAG_HUMAN_ZH
 from llm.rag.retriever import format_docs
 
 
@@ -35,12 +35,12 @@ def simple_chat(question: str, *, chat_history: list[BaseMessage]):
 def rag_chain() -> RunnableSerializable:
     prompt = ChatPromptTemplate.from_messages(
         [
-            SystemMessage(content=RAG_SYSTEM_EN),
+            SystemMessage(content=RAG_SYSTEM_ZH),
             MessagesPlaceholder(variable_name='chat_history'),
-            ('human', RAG_HUMAN_EN),
+            ('human', RAG_HUMAN_ZH),
         ]
     )
-    llm = load_gpt4o_mini()
+    llm = load_deepseek_v3()
     formatter = itemgetter('docs') | RunnableLambda(format_docs)
     chain = {
                 'chat_history': itemgetter('chat_history'),
