@@ -94,17 +94,8 @@ async def add_new_project(
     return new_project.uid
 
 
-@router.get('/chats', response_model=list[ChatSession])
-async def get_chats(
-        session: SessionDep,
-        project_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
-    return chat_crud.get_list(session, project_uid)
-
-
 @router.patch('/new_chat')
-async def add_new_chat(
+async def insert_chat(
         session: SessionDep,
         project_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
@@ -125,8 +116,31 @@ async def add_new_chat(
     return new_chat.uid
 
 
+@router.delete('/delete_chat/{chat_uid}')
+async def delete_chat(
+        session: SessionDep,
+        chat_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)],
+):
+    chat_crud.delete(session, chat_uid)
+    chat_message_history = SQLChatMessageHistory(
+        session_id=chat_uid,
+        connection=engine
+    )
+    chat_message_history.clear()
+
+
+@router.get('/chats', response_model=list[ChatSession])
+async def get_chats(
+        session: SessionDep,
+        project_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return chat_crud.get_list(session, project_uid)
+
+
 @router.get('/chat/{chat_uid}')
-async def load_chat(
+async def get_chat(
         chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):

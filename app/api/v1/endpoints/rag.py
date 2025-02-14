@@ -80,7 +80,7 @@ async def insert_chat(
 async def delete_chat(
         session: SessionDep,
         chat_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+        current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     chat_crud.delete(session, chat_uid)
     chat_message_history = SQLChatMessageHistory(
