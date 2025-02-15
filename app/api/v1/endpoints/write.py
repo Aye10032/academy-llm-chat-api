@@ -58,22 +58,10 @@ class PDFInfo(BaseModel):
     upload_time: datetime
 
 
-@router.get(
+@router.post(
     '/projects',
-    description='返回知识库列表',
-    response_model=list[WriteProject]
+    description='新建写作工程'
 )
-async def read_projects(
-        session: SessionDep,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)],
-        offset: int = 0,
-        limit: Annotated[int, Query(le=20)] = 20,
-
-):
-    return get_project_list(session, current_user.email)
-
-
-@router.patch('/new_project', description='新建写作工程')
 async def add_new_project(
         session: SessionDep,
         description: str,
@@ -94,87 +82,30 @@ async def add_new_project(
     return new_project.uid
 
 
-@router.patch('/new_chat')
-async def insert_chat(
+@router.get(
+    '/projects',
+    description='返回知识库列表',
+    response_model=list[WriteProject]
+)
+async def read_projects(
         session: SessionDep,
-        project_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
-) -> str:
-    now_time = datetime.now()
-
-    new_chat = ChatSessionTable(
-        uid=str(uuid4()),
-        parent_uid=project_uid,
-        description='新建对话',
-        user_email=str(current_user.email),
-        # user_email='admin@example.com',
-        create_time=now_time,
-        update_time=now_time
-    )
-
-    new_chat = chat_crud.insert(session, new_chat)
-    return new_chat.uid
-
-
-@router.delete('/delete_chat/{chat_uid}')
-async def delete_chat(
-        session: SessionDep,
-        chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
+        offset: int = 0,
+        limit: Annotated[int, Query(le=20)] = 20,
+
 ):
-    chat_crud.delete(session, chat_uid)
-    chat_message_history = SQLChatMessageHistory(
-        session_id=chat_uid,
-        connection=engine
-    )
-    chat_message_history.clear()
+    return get_project_list(session, current_user.email)
 
 
-@router.get('/chats', response_model=list[ChatSession])
-async def get_chats(
-        session: SessionDep,
-        project_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
-    return chat_crud.get_list(session, project_uid)
-
-
-@router.get('/chat/{chat_uid}')
-async def get_chat(
-        chat_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
-    chat_message_history = SQLChatMessageHistory(
-        session_id=chat_uid,
-        connection=engine
-    )
-    return chat_message_history.messages
-
-
-@router.get('/manuscripts', response_model=list[ManuscriptPublic])
-async def get_manuscripts(
-        session: SessionDep,
-        project_uid: str,
-        # current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
-    return get_manuscripts_list(session, project_uid)
-
-
-@router.get('/manuscript', response_model=Manuscript)
-async def read_manuscript(
-        session: SessionDep,
-        uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
-    return get_manuscript(session, uid)
-
-
-@router.patch('/new_manuscript')
+@router.post(
+    '/projects/{project_uid}/manuscripts',
+    description='新建草稿'
+)
 async def add_new_manuscript(
         session: SessionDep,
         project_uid: str,
-        title: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+        current_user: Annotated[UserTable, Depends(get_current_active_user)],
+        title: str = Form(...)
 ) -> str:
     manuscript = ManuscriptTable(
         uid=str(uuid4()),
@@ -186,11 +117,12 @@ async def add_new_manuscript(
     return manuscript.uid
 
 
-@router.post('/save_manuscript')
+@router.patch('/projects/{project_uid}/manuscripts/{uid}')
 async def save_manuscript(
         session: SessionDep,
+        project_uid: str,
+        uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
-        uid: str = Form(...),
         content: str = Form(...)
 ) -> str:
     now_time = datetime.now()
@@ -218,13 +150,135 @@ async def save_manuscript(
     return new_manuscript.uid
 
 
-@router.post('/chat')
+@router.get(
+    '/projects/{project_uid}/manuscripts',
+    response_model=list[ManuscriptPublic],
+    description='获取指定项目的草稿列表'
+)
+async def get_manuscripts(
+        session: SessionDep,
+        project_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return get_manuscripts_list(session, project_uid)
+
+
+@router.get(
+    '/projects/{project_uid}/manuscripts/{uid}',
+    response_model=Manuscript,
+    description='查询指定草稿内容'
+)
+async def read_manuscript(
+        session: SessionDep,
+        project_uid: str,
+        uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return get_manuscript(session, uid)
+
+
+@router.get(
+    '/projects/{project_uid}/pdf/{file_path}',
+    description='获取PDF文件内容'
+)
+async def get_pdf_file(
+        file_path: str
+):
+    """
+    获取PDF文件内容
+    """
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return FileResponse(
+        file_path,
+        media_type='application/pdf',
+        filename=Path(file_path).name
+    )
+
+
+@router.post(
+    '/projects/{project_uid}/chats',
+    description='新建对话'
+)
+async def insert_chat(
+        session: SessionDep,
+        project_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+) -> str:
+    now_time = datetime.now()
+
+    new_chat = ChatSessionTable(
+        uid=str(uuid4()),
+        parent_uid=project_uid,
+        description='新建对话',
+        user_email=str(current_user.email),
+        create_time=now_time,
+        update_time=now_time
+    )
+
+    new_chat = chat_crud.insert(session, new_chat)
+    return new_chat.uid
+
+
+@router.delete(
+    '/projects/{project_uid}/chats/{chat_uid}',
+    description='删除指定对话'
+)
+async def delete_chat(
+        session: SessionDep,
+        project_uid: str,
+        chat_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)],
+):
+    chat_crud.delete(session, chat_uid)
+    chat_message_history = SQLChatMessageHistory(
+        session_id=chat_uid,
+        connection=engine
+    )
+    chat_message_history.clear()
+
+
+@router.get(
+    '/projects/{project_uid}/chats',
+    response_model=list[ChatSession],
+    description='获取指定项目的所有对话'
+)
+async def get_chats(
+        session: SessionDep,
+        project_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return chat_crud.get_list(session, project_uid)
+
+
+@router.get(
+    '/projects/{project_uid}/chats/{chat_uid}/messages',
+    description='加载历史对话'
+)
+async def get_chat(
+        project_uid: str,
+        chat_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    chat_message_history = SQLChatMessageHistory(
+        session_id=chat_uid,
+        connection=engine
+    )
+    return chat_message_history.messages
+
+
+@router.post(
+    '/projects/{project_uid}/chats/{chat_uid}/messages',
+    description='请求对话'
+)
 async def chat(
         session: SessionDep,
+        project_uid: str,
+        chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
-        project_uid: str = Form(...),
         graph_ckpt: str = Form(...),
-        chat_uid: str = Form(...),
         message: str = Form(...),
         current_text: str = Form(None),
         files: list[UploadFile] = File([])
@@ -433,71 +487,4 @@ async def chat(
     return StreamingResponse(
         event_generator(),
         media_type='text/event-stream'
-    )
-
-
-@router.get(
-    '/pdf_files',
-    description='获取可供阅读的PDF文件列表',
-    response_model=list[PDFInfo]
-)
-async def get_pdf_files(
-        session: SessionDep,
-        project_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)],
-        offset: int = 0,
-        limit: Annotated[int, Query(le=20)] = 20,
-):
-    """
-    获取项目中的PDF文件列表
-    """
-    settings = get_settings()
-    pdf_dir = os.path.join(settings.server.TEMP_DIR, project_uid)
-
-    if not os.path.exists(pdf_dir):
-        return []
-
-    pdf_files = []
-    for file_name in os.listdir(pdf_dir):
-        if file_name.lower().endswith('.pdf'):
-            file_path = os.path.join(pdf_dir, file_name)
-            file_stat = os.stat(file_path)
-
-            # 构建文件URL
-            file_url = f"/api/v1/write/pdf/{project_uid}/{file_name}"
-
-            pdf_files.append(PDFInfo(
-                file_name=file_name,
-                file_size=file_stat.st_size,
-                file_url=file_url,
-                upload_time=datetime.fromtimestamp(file_stat.st_mtime)
-            ))
-
-    # 按上传时间倒序排序
-    pdf_files.sort(key=lambda x: x.upload_time, reverse=True)
-
-    # 分页
-    start = offset
-    end = offset + limit
-    return pdf_files[start:end]
-
-
-@router.get(
-    '/pdf',
-    description='获取PDF文件内容'
-)
-async def get_pdf_file(
-        file_path: str = Form(...)
-):
-    """
-    获取PDF文件内容
-    """
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
-
-    return FileResponse(
-        file_path,
-        media_type='application/pdf',
-        filename=Path(file_path).name
     )

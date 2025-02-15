@@ -46,8 +46,8 @@ router = APIRouter()
 
 @router.get(
     '/knowledge_bases',
+    response_model=list[KnowledgeBase],
     description='返回知识库列表',
-    response_model=list[KnowledgeBase]
 )
 async def read_knowledge_bases(
         session: SessionDep,
@@ -57,7 +57,10 @@ async def read_knowledge_bases(
     return get_knowledge_bases(session, offset, limit)
 
 
-@router.patch('/new_chat/{knowledge_base_uid}', description='在对应知识库下新建对话')
+@router.post(
+    '/knowledge_bases/{knowledge_base_uid}/chats',
+    description='在对应知识库下新建对话'
+)
 async def insert_chat(
         session: SessionDep,
         knowledge_base_uid: str,
@@ -76,7 +79,23 @@ async def insert_chat(
     return new_chat.uid
 
 
-@router.delete('/delete_chat/{chat_uid}')
+@router.get(
+    '/knowledge_bases/{knowledge_base_uid}/chats',
+    response_model=list[ChatSession],
+    description='获取对应知识库下的对话列表'
+)
+async def get_chats(
+        session: SessionDep,
+        knowledge_base_uid: str,
+        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+):
+    return chat_crud.get_list(session, knowledge_base_uid)
+
+
+@router.delete(
+    '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}',
+    description='删除指定对话历史记录'
+)
 async def delete_chat(
         session: SessionDep,
         chat_uid: str,
@@ -90,16 +109,11 @@ async def delete_chat(
     chat_message_history.clear()
 
 
-@router.get('/chats', response_model=list[ChatSession])
-async def get_chats(
-        session: SessionDep,
-        knowledge_base_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
-):
-    return chat_crud.get_list(session, knowledge_base_uid)
-
-
-@router.get('/chat_info/{chat_uid}', response_model=ChatSession)
+@router.get(
+    '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}',
+    response_model=ChatSession,
+    description='返回对话信息'
+)
 async def get_chat(
         session: SessionDep,
         chat_uid: str,
@@ -108,7 +122,10 @@ async def get_chat(
     return chat_crud.get(session, chat_uid)
 
 
-@router.get('/chat/{chat_uid}')
+@router.get(
+    '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}/messages',
+    description='加载对话历史'
+)
 async def get_chat_history(
         chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)]
@@ -120,13 +137,16 @@ async def get_chat_history(
     return chat_message_history.messages
 
 
-@router.post('/chat')
+@router.post(
+    '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}/messages',
+    description='请求对话'
+)
 async def chat(
         session: SessionDep,
+        knowledge_base_uid: str,
+        chat_uid: str,
         current_user: Annotated[UserTable, Depends(get_current_active_user)],
         message: str = Form(...),
-        knowledge_base_uid: str = Form(...),
-        chat_uid: str = Form(...),
 ):
     chat_message_history = SQLChatMessageHistory(
         session_id=chat_uid,

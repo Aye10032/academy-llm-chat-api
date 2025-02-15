@@ -25,7 +25,7 @@ async def update_chat(
     return update_user(session, email, user)
 
 
-@router.post('/register')
+@router.post('')
 async def user_registry(
         session: SessionDep,
         email: str = Form(...),
