@@ -218,19 +218,20 @@ class KnowledgeManageAgent(BaseModel):
             ('human', CONCLUDE_DOCUMENTS_HUMAN_ZH)
         ])
         chain = prompt | self.task_llm
+        doc_str = format_docs(clean_output)
         response = chain.invoke({
             'question': origin_question,
-            'doc_str': format_docs(clean_output, 'zh')
+            'doc_str': doc_str
         })
 
-        lines = response.content.splitlines()
-        title = lines[0]
+        title = response.content
+        body = f'# {title}\n\n<documents>{doc_str}<documents>'
 
         manuscript = ManuscriptTable(
             uid=str(uuid4()),
             project_uid=state['project_uid'],
-            title=title.lstrip('#').strip(),
-            content=response.content,
+            title=title,
+            content=body,
             is_draft=True
         )
         with Session(engine) as session:
@@ -238,7 +239,7 @@ class KnowledgeManageAgent(BaseModel):
 
         token_usage = UsageMetadata.create(response.usage_metadata)
         return {
-            'messages': [AIMessage(content=f'我已经找到了相关的资料，并将总结的资料保存到了文件《{title.strip("#").strip()}》中。')],
+            'messages': [AIMessage(content=f'我已经找到了相关的资料，并将相关资料保存到了文件《{title}》中。')],
             'price': token_usage.calculate_cost(self.router_llm)
         }
 
