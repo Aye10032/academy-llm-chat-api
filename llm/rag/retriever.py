@@ -190,11 +190,11 @@ def base_retriever(
 
 def format_docs(docs: list[Document]) -> str:
     formatted = [(
-        f'<id>{i + 1}</id>\n'
-        f'<title>{doc.metadata['title']}</title>\n'
-        f'<author>{doc.metadata['author']}</author>\n'
-        f'<year>{doc.metadata['year']}</year>\n'
-        f'<content>{doc.page_content}</content>'
+        f'<doc-id>{i + 1}</doc-id>\n'
+        f'<doc-title>{doc.metadata['title']}</doc-title>\n'
+        f'<doc-author>{doc.metadata['author']}</doc-author>\n'
+        f'<doc-year>{doc.metadata['year']}</doc-year>\n'
+        f'<doc-content>{doc.page_content}</doc-content>'
     )
         for i, doc in enumerate(docs)
     ]
