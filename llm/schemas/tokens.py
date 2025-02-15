@@ -107,7 +107,7 @@ class UsageMetadata(BaseModel):
         """
         if llm.model_name == 'gpt-4o-mini':
             price = GPT_4O_MINI
-        elif llm.model_name == 'deepseek-chat':
+        elif llm.model_name in ['deepseek-chat','deepseek-ai/DeepSeek-V3']:
             price = DEEPSEEK_V3
         elif llm.model_name == 'deepseek-reasoner':
             price = DEEPSEEK_R1
