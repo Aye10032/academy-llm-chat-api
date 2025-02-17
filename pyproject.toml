@@ -1,0 +1,28 @@
+[project]
+name = "academy-llm-chat-api"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "bs4>=0.0.2",
+    "duckduckgo-search>=7.4.2",
+    "fastapi>=0.115.8",
+    "langchain>=0.3.18",
+    "langchain-community>=0.3.17",
+    "langchain-milvus>=0.1.8",
+    "langchain-openai>=0.3.6",
+    "langgraph>=0.2.73",
+    "loguru>=0.7.3",
+    "lxml>=5.3.1",
+    "markdownify>=0.14.1",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic-settings>=2.7.1",
+    "pydantic[email]>=2.10.6",
+    "pyjwt>=2.10.1",
+    "python-multipart>=0.0.20",
+    "sqlmodel>=0.0.22",
+    "torch>=2.6.0",
+    "transformers>=4.48.3",
+    "uvicorn>=0.34.0",
+]
