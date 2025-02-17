@@ -1,3 +1,4 @@
+import random
 import re
 from enum import StrEnum
 from typing import Literal, Any
@@ -13,6 +14,7 @@ from urllib3 import Retry
 from urllib3.exceptions import ResponseError
 
 from app.core.config import GrobidSetting, get_settings
+from app.utils.network import retry
 from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import MarkdownMeta, ArticleBlock
 from llm.schemas.markdown import FileSource, SourceType
@@ -36,6 +38,123 @@ class ConsolidateFunders(StrEnum):
     ALL_METADATA = '1'
     CITATION_AND_DOI = '2'
 
+
+class DOINotFoundError(Exception):
+    pass
+
+
+@retry(delay=random.uniform(2.0, 5.0))
+def get_paper_info(pmid: str,  silent: bool = True) -> tuple[list[ArticleBlock], MarkdownMeta]:
+    """根据pubmed id获取文献信息
+
+    Args:
+        pmid: PubMed ID
+        silent: 是否输出日志信息
+
+    Returns:
+
+    """
+
+    if not silent:
+        logger.info(f'request PMID:{pmid}')
+
+    url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&retmode=xml'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+
+    if get_settings().server.network.USE_PROXY:
+        proxies = {
+            'http': get_settings().server.network.PROXY,
+            'https': get_settings().server.network.PROXY
+        }
+        response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
+    else:
+        response = requests.request('GET', url, headers=headers, timeout=10)
+
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'xml')
+
+        title = soup.find('Article').find('ArticleTitle').text if soup.find('Article') else None
+        year = (soup.find('Article')
+                .find('JournalIssue')
+                .find('PubDate').find('Year').text)
+
+        author = ''
+        if author_block := soup.find('Author'):
+            last_name = author_block.find('LastName').text if author_block.find('LastName') else ''
+            initials = author_block.find('Initials').text if author_block.find('Initials') else ''
+            author = f'{last_name}, {initials}'
+
+        abstract = soup.find('AbstractText').text if soup.find('AbstractText') else None
+
+        doi_block = soup.find('ArticleIdList').find('ArticleId', {'IdType': 'doi'})
+        if doi_block:
+            doi = doi_block.text
+        else:
+            doi = None
+            logger.warning('DOI not found')
+
+        paper_info = MarkdownMeta(
+            title=title,
+            author=author,
+            year=int(year),
+            source=[
+                FileSource(source_url=f'https://doi.org/{doi}', source_type=SourceType.WEB),
+                FileSource(source_url=f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/', source_type=SourceType.PUBMED),
+            ]
+        )
+
+        section_list = [
+            ArticleBlock(text=title, text_level=1),
+            ArticleBlock(text='Abstract', text_level=2),
+            ArticleBlock(text=abstract)
+        ]
+        return section_list, paper_info
+    else:
+        # 请求失败时抛出异常
+        raise Exception('下载请求失败')
+
+
+@retry(delay=random.uniform(2.0, 5.0))
+def get_info_by_doi(doi: str, silent: bool = True) -> tuple[list[ArticleBlock], MarkdownMeta]:
+    """通过DOI号补全文献信息
+
+    Args:
+        doi: 待查询文献的DOI号
+        silent: 是否输出日志信息
+
+    Returns:
+
+    """
+    if not silent:
+        logger.info(f'search paper: {doi}')
+
+    url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={doi}[doi]&retmode=xml'
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+
+    if get_settings().server.network.USE_PROXY:
+        proxies = {
+            'http': get_settings().server.network.PROXY,
+            'https': get_settings().server.network.PROXY
+        }
+        response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
+    else:
+        response = requests.request('GET', url, headers=headers, timeout=10)
+
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'xml')
+
+        count: int = soup.find('Count').text if soup.find('Count') else 0
+
+        if count > 0:
+            pmid = soup.find('IdList').find_all('Id')[0].text
+            return get_paper_info(pmid)
+
+    raise DOINotFoundError
 
 class GrobidConnector:
     """Grobid pdf解析服务封装"""
@@ -155,67 +274,11 @@ class GrobidConnector:
         """
         soup = BeautifulSoup(xml_data, 'xml')
 
-        # 提取XML中的标题
-        title = soup.find('titleStmt').find('title', {'type': 'main'})
-        title = ''.join(filter(str.isprintable, title.text.strip())) if title is not None else ''
-
-        # 提取作者信息
-        authors = []
-        for author in soup.find('sourceDesc').find_all('persName'):
-            first_name = author.find('forename', {'type': 'first'})
-            first_name = first_name.text.strip() if first_name is not None else ''
-            middle_name = author.find('forename', {'type': 'middle'})
-            middle_name = middle_name.text.strip() if middle_name is not None else ''
-            last_name = author.find('surname')
-            last_name = last_name.text.strip() if last_name is not None else ''
-
-            if middle_name != '':
-                authors.append(self.__extract_author_name(last_name, f'{first_name} {middle_name}'))
-            else:
-                authors.append(self.__extract_author_name(last_name, first_name))
-
-        if len(authors) == 0:
-            authors.append('')
-
-        # 提取出版年份
-        pub_date = soup.find('publicationStmt')
-        year_block = pub_date.find('date')
-        year = year_block.attrs.get('when') if year_block is not None else ''
-
-        try:
-            match len(year):
-                case 4:
-                    year = int(year)
-                case 0:
-                    year = -1
-                case _:
-                    year = int(year[:4])
-        except TypeError:
-            year = -1
-
-        file_meta = MarkdownMeta(
-            title=title,
-            author=authors[0],
-            year=year,
-            source=[]
-        )
-
         doi = soup.find('sourceDesc').find('idno', {'type': 'DOI'})
         if doi:
-            file_meta.source.append(
-                FileSource(
-                    source_url=f'https://doi.org/{doi.text}',
-                    source_type=SourceType.WEB
-                )
-            )
-
-        sections = [ArticleBlock(text=title, text_level=1)]
-        # 提取摘要
-        abstract_list = soup.find('profileDesc').select('abstract p')
-        if len(abstract_list) > 0:
-            sections.append(ArticleBlock(text='Abstract', text_level=2))
-            for p in abstract_list:
-                sections.append(ArticleBlock(text=p.text.strip()))
+            sections, file_meta = get_info_by_doi(doi)
+        else:
+            raise DOINotFoundError
 
         # 提取章节信息
         for section in soup.find('body').find_all('div'):
@@ -239,21 +302,6 @@ class GrobidConnector:
                     sections.append(ArticleBlock(text=text))
 
         return sections, file_meta
-
-    @staticmethod
-    def __extract_author_name(surname, given_names) -> str:
-        """提取作者的姓名首字母缩写和姓氏
-
-        Args:
-            surname: 作者的姓氏
-            given_names: 作者的名字，可以包含多个名字
-
-        Returns:
-            格式化后的作者姓名，格式为“姓, 名首字母缩写”
-        """
-        initials = ' '.join([name[0] + '.' for name in given_names.split()])
-
-        return f'{surname}, {initials}'
 
 
 class PdfLoader(BaseFileLoader):
