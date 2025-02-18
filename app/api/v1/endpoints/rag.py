@@ -38,7 +38,7 @@ class SSEMessage(BaseModel):
 
     def to_sse(self) -> str:
         """转换为 SSE 格式的消息"""
-        return f"event: {self.event.value}\ndata: {json.dumps(self.data, ensure_ascii=False)}\n\n"
+        return f'event: {self.event.value}\ndata: {json.dumps(self.data, ensure_ascii=False)}\n\n'
 
 
 router = APIRouter()
@@ -50,21 +50,20 @@ router = APIRouter()
     description='返回知识库列表',
 )
 async def read_knowledge_bases(
-        session: SessionDep,
-        offset: int = 0,
-        limit: Annotated[int, Query(le=20)] = 20,
+    session: SessionDep,
+    offset: int = 0,
+    limit: Annotated[int, Query(le=20)] = 20,
 ):
     return get_knowledge_bases(session, offset, limit)
 
 
 @router.post(
-    '/knowledge_bases/{knowledge_base_uid}/chats',
-    description='在对应知识库下新建对话'
+    '/knowledge_bases/{knowledge_base_uid}/chats', description='在对应知识库下新建对话'
 )
 async def insert_chat(
-        session: SessionDep,
-        knowledge_base_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+    session: SessionDep,
+    knowledge_base_uid: str,
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ) -> str:
     now_time = datetime.now()
 
@@ -73,7 +72,7 @@ async def insert_chat(
         parent_uid=knowledge_base_uid,
         user_email=str(current_user.email),
         create_time=now_time,
-        update_time=now_time
+        update_time=now_time,
     )
     new_chat = chat_crud.insert(session, new_chat)
     return new_chat.uid
@@ -82,76 +81,66 @@ async def insert_chat(
 @router.get(
     '/knowledge_bases/{knowledge_base_uid}/chats',
     response_model=list[ChatSession],
-    description='获取对应知识库下的对话列表'
+    description='获取对应知识库下的对话列表',
 )
 async def get_chats(
-        session: SessionDep,
-        knowledge_base_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+    session: SessionDep,
+    knowledge_base_uid: str,
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     return chat_crud.get_list(session, knowledge_base_uid)
 
 
 @router.delete(
     '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}',
-    description='删除指定对话历史记录'
+    description='删除指定对话历史记录',
 )
 async def delete_chat(
-        session: SessionDep,
-        chat_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)],
+    session: SessionDep,
+    chat_uid: str,
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     chat_crud.delete(session, chat_uid)
-    chat_message_history = SQLChatMessageHistory(
-        session_id=chat_uid,
-        connection=engine
-    )
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
     chat_message_history.clear()
 
 
 @router.get(
     '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}',
     response_model=ChatSession,
-    description='返回对话信息'
+    description='返回对话信息',
 )
 async def get_chat(
-        session: SessionDep,
-        chat_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+    session: SessionDep,
+    chat_uid: str,
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     return chat_crud.get(session, chat_uid)
 
 
 @router.get(
     '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}/messages',
-    description='加载对话历史'
+    description='加载对话历史',
 )
 async def get_chat_history(
-        chat_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)]
+    chat_uid: str, current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    chat_message_history = SQLChatMessageHistory(
-        session_id=chat_uid,
-        connection=engine
-    )
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
     return chat_message_history.messages
 
 
 @router.post(
     '/knowledge_bases/{knowledge_base_uid}/chats/{chat_uid}/messages',
-    description='请求对话'
+    description='请求对话',
 )
 async def chat(
-        session: SessionDep,
-        knowledge_base_uid: str,
-        chat_uid: str,
-        current_user: Annotated[UserTable, Depends(get_current_active_user)],
-        message: str = Form(...),
+    session: SessionDep,
+    knowledge_base_uid: str,
+    chat_uid: str,
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
+    message: str = Form(...),
 ):
-    chat_message_history = SQLChatMessageHistory(
-        session_id=chat_uid,
-        connection=engine
-    )
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
     knowledge_base = get_knowledge_base(session, knowledge_base_uid)
     table_name = knowledge_base.table_name
 
@@ -160,10 +149,7 @@ async def chat(
 
     async def generate():
         # 发送模型加载状态
-        yield SSEMessage(
-            event=ChatEventType.STATUS,
-            data='正在加载模型...'
-        ).to_sse()
+        yield SSEMessage(event=ChatEventType.STATUS, data='正在加载模型...').to_sse()
 
         await asyncio.sleep(0.1)  # 添加小延迟
 
@@ -174,8 +160,7 @@ async def chat(
 
         # 发送文档检索状态
         yield SSEMessage(
-            event=ChatEventType.STATUS,
-            data='正在检索相关文档...'
+            event=ChatEventType.STATUS, data='正在检索相关文档...'
         ).to_sse()
 
         await asyncio.sleep(0.1)  # 添加小延迟
@@ -184,36 +169,26 @@ async def chat(
         docs = retriever.invoke(message)
 
         # 发送检索到的文档
-        docs_data = [{
-            'content': doc.page_content,
-            'metadata': doc.metadata
-        } for doc in docs]
-        yield SSEMessage(
-            event=ChatEventType.DOCS,
-            data=docs_data
-        ).to_sse()
+        docs_data = [
+            {'content': doc.page_content, 'metadata': doc.metadata} for doc in docs
+        ]
+        yield SSEMessage(event=ChatEventType.DOCS, data=docs_data).to_sse()
 
         await asyncio.sleep(0.1)  # 添加小延迟
 
         # 发送生成回答状态
-        yield SSEMessage(
-            event=ChatEventType.STATUS,
-            data='正在生成回答...'
-        ).to_sse()
+        yield SSEMessage(event=ChatEventType.STATUS, data='正在生成回答...').to_sse()
 
         chain = rag_chain()
         full_response = ''
 
-        async for chunk in chain.astream({
-            'chat_history': [],
-            'docs': docs,
-            'question': message
-        }):
+        async for chunk in chain.astream(
+            {'chat_history': [], 'docs': docs, 'question': message}
+        ):
             if chunk.content:
                 full_response += chunk.content
                 yield SSEMessage(
-                    event=ChatEventType.ANSWER,
-                    data=chunk.content
+                    event=ChatEventType.ANSWER, data=chunk.content
                 ).to_sse()
 
         logger.info(f'AI: {full_response}')
@@ -226,10 +201,7 @@ async def chat(
         chat_crud.update(
             session,
             chat_uid,
-            ChatSessionUpdate(
-                description=conclude.content,
-                update_time=now_time
-            )
+            ChatSessionUpdate(description=conclude.content, update_time=now_time),
         )
 
     # 自动生成总结
@@ -241,10 +213,7 @@ async def chat(
     update_user(
         session,
         str(current_user.email),
-        UserUpdate(last_knowledge_base=knowledge_base_uid)
+        UserUpdate(last_knowledge_base=knowledge_base_uid),
     )
 
-    return StreamingResponse(
-        generate(),
-        media_type='text/event-stream'
-    )
+    return StreamingResponse(generate(), media_type='text/event-stream')
