@@ -14,6 +14,7 @@ from app.crud.knowledge_base import get_knowledge_bases
 from app.db.session import engine
 from llm.core.model import load_embedding, load_gpt4o
 from llm.core.template import SELECT_KNOWLEDGE_BASE_SYSTEM_ZH
+from llm.rag.retriever import ExprRetriever
 from llm.rag.storage import get_vector_db, get_doc_db
 
 
@@ -22,14 +23,17 @@ class SelectKnowledgeBaseInput(BaseModel):
 
 
 class SelectKnowledgeBaseOutput(BaseModel):
-    """合适的提问问句与所查询知识库"""
+    """合适的提问问句与所查询知识库
+    此外，根据用户提问的内容，决定这个问题是否适合先进行文章级别的搜索，再进行文本内容的查找。
+    """
     question: str = Field(description='根据所需要的信息分析的来的，具体用于从知识库中找回文本的语句')
     table_name: str = Field(description='查询的知识库名称。如果没有合适的知识库，则留空。')
+    paper_first: bool = Field(description='用户的搜索请求是否适合先进行文章检索再进行内容检索？')
 
 
 class SelectKnowledgeBase(BaseTool):
     name: str = 'select_vecstore'
-    description: str = '如果用户没有指定具体使用哪个知识库，则调用此工具分析问题并得到合适的数据库'
+    description: str = '向量知识库查询工具，能够根据用户的需求自行判断最合适的数据库进行查询'
     args_schema: Type[BaseModel] = SelectKnowledgeBaseInput
     return_direct: bool = False
     handle_tool_error: bool = True
@@ -59,7 +63,7 @@ class SelectKnowledgeBase(BaseTool):
                 for kb in kb_list
             ])
 
-        llm = self.llm.with_structured_output(SelectKnowledgeBaseOutput, include_raw=True, method='function_calling')
+        llm = self.llm.with_structured_output(SelectKnowledgeBaseOutput, include_raw=True)
         prompt = ChatPromptTemplate.from_messages([
             ('system', SELECT_KNOWLEDGE_BASE_SYSTEM_ZH),
             ('human', '{human_input}')
@@ -76,6 +80,7 @@ class SelectKnowledgeBase(BaseTool):
 class RAGSearchInput(BaseModel):
     question: str = Field(description='用于从知识库中召回长文本的搜索文本')
     table_name: str = Field(description='具体使用的知识库名称')
+    expr: str = Field(description='向量数据库查询条件语句')
 
 
 class RAGSearchTool(BaseTool):
@@ -89,6 +94,7 @@ class RAGSearchTool(BaseTool):
             self,
             question: str,
             table_name: str,
+            expr: str,
             config: Optional[RunnableConfig] = None
     ) -> list[Document]:
         """从向量数据库中进行查询操作"""
@@ -99,11 +105,20 @@ class RAGSearchTool(BaseTool):
         vec_store = get_vector_db(table_name, embedding, db_name='llm_chat')
         doc_store = get_doc_db(table_name)
 
-        retriever = MultiVectorRetriever(
-            vectorstore=vec_store,
-            docstore=doc_store,
-            search_kwargs={'k': 8, 'fetch_k': 10}
-        )
+        if not expr:
+            retriever = MultiVectorRetriever(
+                vectorstore=vec_store,
+                docstore=doc_store,
+                search_kwargs={'k': 8, 'fetch_k': 10}
+            )
+
+        else:
+            retriever = ExprRetriever(
+                vectorstore=vec_store,
+                docstore=doc_store,
+                search_kwargs={'k': 8, 'fetch_k': 10},
+                expr_statement=expr
+            )
 
         output = retriever.invoke(question, config)
         return output
