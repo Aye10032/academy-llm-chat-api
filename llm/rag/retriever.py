@@ -113,6 +113,37 @@ class ScoreRetriever(MultiVectorRetriever):
         return response
 
 
+class ExprRetriever(MultiVectorRetriever):
+    expr_statement: str
+
+    top_k: int = 5
+
+    def _get_relevant_documents(
+            self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        if self.search_type == SearchType.similarity:
+            short_doc: list[Document] = self.vectorstore.similarity_search(
+                query,
+                expr=self.expr_statement,
+                **self.search_kwargs
+            )
+        else:
+            short_doc: list[Document] = self.vectorstore.max_marginal_relevance_search(
+                query,
+                expr=self.expr_statement,
+                **self.search_kwargs
+            )
+
+        ids, id_map = _get_parent_id(short_doc, self.id_key)
+
+        docs = self.docstore.mget(ids)
+        for i in range(len(docs)):
+            context_id = docs[i].metadata[self.id_key]
+            docs[i].metadata['refer_sentence'] = id_map.get(context_id)
+
+        return docs
+
+
 def insert_chain(
         vector_store: VectorStore,
         doc_store: BaseStore,
