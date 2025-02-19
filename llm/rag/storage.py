@@ -244,6 +244,7 @@ def create_vector_db(
     schema.add_field('year', DataType.INT64)
     schema.add_field('type', DataType.VARCHAR, max_length=65535)
     schema.add_field('source', DataType.JSON, max_length=65535)
+    schema.add_field('file_id', DataType.VARCHAR, max_length=65535)
     schema.add_field('doc_id', DataType.VARCHAR, max_length=65535)
     schema.add_field('text', DataType.VARCHAR, max_length=65535)
     schema.add_field('pk', DataType.INT64, is_primary=True)

@@ -2,6 +2,7 @@ import io
 from abc import ABC, abstractmethod
 from io import StringIO
 from typing import Optional, Any
+from uuid import uuid4
 
 import yaml
 from langchain_core.documents import Document
@@ -11,8 +12,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from pydantic import FilePath, BaseModel, Field, AnyHttpUrl
 
-from llm.core.model import load_llm
 from llm.schemas import ArticleBlock, MarkdownMeta
+from llm.schemas.markdown import FileSource
 
 SYS_PROMPT = """你是一个专业的文本摘要生成器。你的任务是根据用户提供的文章，生成简洁、准确、信息量丰富的摘要。摘要应：
 1.  抓住文章的核心思想和关键信息。
@@ -92,6 +93,10 @@ class BaseFileLoader(BaseModel, ABC):
         self.file_meta = None
         self.article = []
 
+    def update_source(self, new_source: list[FileSource]):
+        if self.file_meta:
+            self.file_meta.source = new_source
+
     def __meta_to_str(self) -> str:
         stream = StringIO()
         stream.write('---\t\n')
@@ -113,6 +118,8 @@ class BaseFileLoader(BaseModel, ABC):
         )
 
     def _conclude_article(self) -> str:
+        from llm.core.model import load_llm
+
         if self.llm is None:
             self.llm = load_llm('glm-4-flash')
 
@@ -154,6 +161,7 @@ class BaseFileLoader(BaseModel, ABC):
         )
         head_split_docs = md_splitter.split_text(md_text)
 
+        file_uid = str(uuid4())
         has_abstract = False
         for doc in head_split_docs:
             if (
@@ -166,6 +174,7 @@ class BaseFileLoader(BaseModel, ABC):
                         'year': self.file_meta.year,
                         'type': 'abstract',
                         'source': self.file_meta.model_dump()['source'],
+                        'file_id': file_uid,
                     }
                 )
                 has_abstract = True
@@ -176,6 +185,7 @@ class BaseFileLoader(BaseModel, ABC):
                         'year': self.file_meta.year,
                         'type': 'content',
                         'source': self.file_meta.model_dump()['source'],
+                        'file_id': file_uid,
                     }
                 )
 
@@ -201,6 +211,7 @@ class BaseFileLoader(BaseModel, ABC):
                     'year': self.file_meta.year,
                     'type': 'toc',
                     'source': self.file_meta.model_dump()['source'],
+                    'file_id': file_uid,
                 },
             )
 
@@ -220,6 +231,7 @@ class BaseFileLoader(BaseModel, ABC):
                     'year': self.file_meta.year,
                     'type': 'abstract',
                     'source': self.file_meta.model_dump()['source'],
+                    'file_id': file_uid,
                 },
             )
 

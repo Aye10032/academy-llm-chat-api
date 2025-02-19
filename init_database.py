@@ -17,9 +17,9 @@ from app.core.security import get_password_hash
 from app.crud.knowledge_base import (
     insert_knowledge_base,
     KBExistError,
-    delete_knowledge_base,
     update_knowledge_base,
-    get_knowledge_base_by_name
+    get_knowledge_base_by_name,
+    delete_by_name,
 )
 from app.crud.user import insert_user, UserExistError
 from app.db.session import get_simple_session, create_db_and_tables
@@ -30,10 +30,10 @@ from app.utils.validator import validate_input, simple_char_valid
 from llm.core.model import load_embedding
 from llm.file_loader import MarkdownLoader
 from llm.file_loader.loader import FileLoadError
-from llm.file_loader.pdf import PdfLoader, GrobidConnector
+from llm.file_loader.pdf import PdfLoader, GrobidConnector, DOINotFoundError
 from llm.rag.retriever import insert_chain
 from llm.rag.storage import create_vector_db, get_doc_db, fix_null_fields, get_vector_db
-from llm.schemas.markdown import SourceType
+from llm.schemas.markdown import SourceType, FileSource
 
 logger.remove()
 handler_id = logger.add(sys.stderr, level='DEBUG')
@@ -46,14 +46,16 @@ def init_user(email: str, password: str):
         username='Admin',
         hashed_password=get_password_hash(password),
         is_active=True,
-        role=UserRole.ADMIN
+        role=UserRole.ADMIN,
     )
 
     session = get_simple_session()
     logger.info('从配置文件创建默认管理员账户...')
     try:
         insert_user(session, test_user)
-        logger.info('创建完毕。请注意，当存在手动注册的其他管理员账户后，此账号将被禁用。')
+        logger.info(
+            '创建完毕。请注意，当存在手动注册的其他管理员账户后，此账号将被禁用。'
+        )
     except UserExistError:
         logger.error('此邮箱已存在')
     finally:
@@ -81,26 +83,27 @@ def _get_collection_ext() -> str:
     return user_input if user_input else 'md'
 
 
-def init_knowledge_base(
-        file_path: str,
-        output_path: str,
-        drop_old: bool,
-        abstract_word: str
-):
+def _get_collection_abstract_keyword() -> str:
+    user_input = input(
+        '\033[33m输入文献摘要段落的检查关键字（默认为abstract）： \033[0m'
+    )
+    return user_input if user_input else 'abstract'
+
+
+def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
     logger.info(f'覆盖:{drop_old}')
     session = get_simple_session()
 
     # 创建知识库相关数据表
     collection_name = _get_collection_name()
     if get_knowledge_base_by_name(session, collection_name) and not drop_old:
+        abs_key = _get_collection_abstract_keyword()
         collection_lang = _get_collection_lang()
         collection_ext = _get_collection_ext()
         uid = get_knowledge_base_by_name(session, collection_name).uid
 
         now_time = datetime.now()
-        knowledge_base = KnowledgeBaseUpdate(
-            last_update=now_time
-        )
+        knowledge_base = KnowledgeBaseUpdate(last_update=now_time)
         update_knowledge_base(session, uid, knowledge_base)
 
         # 初始化向量数据库
@@ -110,11 +113,12 @@ def init_knowledge_base(
         vector_db = get_vector_db(
             table_name=collection_name,
             embedding_model=embedding_model,
-            db_name='llm_chat'
+            db_name='llm_chat',
         )
     else:
         collection_title = _get_collection_title()
         collection_desc = input('\033[33m输入知识库描述： \033[0m')
+        abs_key = _get_collection_abstract_keyword()
         collection_lang = _get_collection_lang()
         collection_ext = _get_collection_ext()
         now_time = datetime.now()
@@ -125,12 +129,12 @@ def init_knowledge_base(
             table_title=collection_title,
             description=collection_desc,
             create_time=now_time,
-            last_update=now_time
+            last_update=now_time,
         )
 
         logger.info('创建知识库记录...')
         if drop_old:
-            delete_knowledge_base(session, collection_name)
+            delete_by_name(session, collection_name)
 
         try:
             insert_knowledge_base(session, knowledge_base)
@@ -148,7 +152,7 @@ def init_knowledge_base(
             table_name=collection_name,
             embedding_model=embedding_model,
             db_name='llm_chat',
-            drop_old=drop_old
+            drop_old=drop_old,
         )
 
     if not os.path.exists(file_path):
@@ -164,29 +168,18 @@ def init_knowledge_base(
     os.makedirs('temp', exist_ok=True)
 
     if collection_ext == 'md':
-        markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')  # pylint: disable=inconsistent-quotes
+        markdown_list = glob.glob(f'{file_path.rstrip("/")}/*.md')
         md_path = os.path.join(output_path, collection_name, 'markdown')
         os.makedirs(md_path, exist_ok=True)
 
-        md_loader = MarkdownLoader(keep_title=False, abstract_key=abstract_word)
+        md_loader = MarkdownLoader(keep_title=False, abstract_key=abs_key)
         logger.info('建立文档索引')
         for file in tqdm(markdown_list, total=len(markdown_list)):
             md_file = os.path.join(md_path, Path(file).name)
             if Path(md_file).exists():
                 continue
 
-            meta, docs = md_loader.load(file)
-
-            if len(meta.source) > 1:
-                pdf_path = os.path.join(output_path, collection_name, 'pdf')
-                os.makedirs(pdf_path, exist_ok=True)
-                for source in md_loader.file_meta.source:
-                    if source.source_type == SourceType.PDF:
-                        pdf_file = os.path.join(pdf_path, Path(source.source_url).name)
-                        origin_file = os.path.join(file_path, source.source_url.lstrip('./'))
-                        shutil.copyfile(origin_file, pdf_file)
-                        source.source_url = pdf_file
-
+            _, docs = md_loader.load(file)
             md_loader.save_md(md_file)
 
             # TODO 临时修复zilliz无法处理空值的问题
@@ -203,7 +196,13 @@ def init_knowledge_base(
         gr_setting = get_settings().fileloader.grobid
 
         with GrobidConnector(gr_setting) as connector:
-            loader = PdfLoader(keep_title=False, add_toc=True, solver='grobid', connector=connector)
+            loader = PdfLoader(
+                keep_title=False,
+                add_toc=True,
+                solver='grobid',
+                connector=connector,
+                abstract_key=abs_key,
+            )
             logger.info('建立文档索引')
             for file in tqdm(pdf_list, total=len(pdf_list)):
                 pdf_file = os.path.join(pdf_path, Path(file).name)
@@ -215,17 +214,22 @@ def init_knowledge_base(
                 try:
                     _, docs = loader.load(pdf_file)
 
-                    md_file = os.path.join(md_path, Path(file).name.replace('.pdf', '.md'))
+                    md_file = os.path.join(
+                        md_path, Path(file).name.replace('.pdf', '.md')
+                    )
                     loader.save_md(md_file)
 
                     # TODO 临时修复zilliz无法处理空值的问题
                     if get_settings().retriever.knowledge_base.milvus.SECURE:
                         docs = fix_null_fields(docs)
                     retriever.add_documents(docs)
+                except DOINotFoundError:
+                    os.remove(pdf_file)
+                    logger.error(f'文件{file}未识别到doi，请手动处理')
                 except FileLoadError:
                     os.remove(pdf_file)
                     logger.error(f'文件{file}解析失败，请手动处理')
-                except  ResponseError:
+                except ResponseError:
                     os.remove(pdf_file)
                     logger.error(f'文件{file}下载失败，请手动处理')
 
@@ -242,18 +246,12 @@ def load_args(args: Namespace):
             origin_path,
             setting.retriever.knowledge_base.STORE_PATH,
             args.drop_old,
-            args.abstract_word
         )
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='database init')
-    parser.add_argument(
-        '--user',
-        '-u',
-        action='store_true',
-        help='创建默认管理员账户'
-    )
+    parser.add_argument('--user', '-u', action='store_true', help='创建默认管理员账户')
     parser.add_argument(
         '--knowledge_base',
         '-kb',
@@ -261,19 +259,9 @@ if __name__ == '__main__':
         const=-1,
         type=str,
         default='',
-        help='创建知识库。若传入待建库文件所在路径，则会进行知识库文件的初始化。目前仅支持一次性处理单一类型的文件'
+        help='创建知识库。若传入待建库文件所在路径，则会进行知识库文件的初始化。目前仅支持一次性处理单一类型的文件',
     )
     parser.add_argument(
-        '--abstract_word',
-        '-a',
-        type=str,
-        default='abstract',
-        help='加载文章中用于作为摘要片段的标题'
-    )
-    parser.add_argument(
-        '--drop_old',
-        '-d',
-        action='store_true',
-        help='是否直接覆盖原有数据'
+        '--drop_old', '-d', action='store_true', help='是否直接覆盖原有数据'
     )
     load_args(parser.parse_args())

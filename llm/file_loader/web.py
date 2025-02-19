@@ -1,7 +1,7 @@
 import datetime
 import random
-import re
 from typing import Optional, Self, Any
+from uuid import uuid4
 
 import requests
 from langchain_community.document_loaders import WebBaseLoader
@@ -9,7 +9,7 @@ from langchain_community.document_transformers import MarkdownifyTransformer
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from loguru import logger
-from pydantic import AnyHttpUrl, model_validator, BaseModel, Field, FilePath
+from pydantic import AnyHttpUrl, model_validator, BaseModel, Field
 from requests import HTTPError
 
 from app.core.config import get_settings
@@ -23,27 +23,25 @@ network_setting = get_settings().server.network
 
 
 class SimpleWebLoader(BaseFileLoader):
-
-    def load(self, origin_file_path: AnyHttpUrl, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
+    def load(
+        self, origin_file_path: AnyHttpUrl, **kwargs
+    ) -> tuple[MarkdownMeta, list[Document]]:
         if network_setting.USE_PROXY:
             loader = WebBaseLoader(
-                origin_file_path,
+                str(origin_file_path),
                 header_template={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 },
                 encoding='utf-8',
-                proxies={
-                    'http': network_setting.PROXY,
-                    'https': network_setting.PROXY
-                }
+                proxies={'http': network_setting.PROXY, 'https': network_setting.PROXY},
             )
         else:
             loader = WebBaseLoader(
-                origin_file_path,
+                str(origin_file_path),
                 header_template={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 },
-                encoding='utf-8'
+                encoding='utf-8',
             )
 
         docs = loader.load()
@@ -58,15 +56,14 @@ class SimpleWebLoader(BaseFileLoader):
             author='',
             year=kwargs.get('year', now_time.year),
             source=[
-                FileSource(source_url=origin_file_path, source_type=SourceType.WEB)
-            ]
+                FileSource(source_url=str(origin_file_path), source_type=SourceType.WEB)
+            ],
         )
 
         self.article = [ArticleBlock(text=self.file_meta.title, text_level=1)]
-        self.article.extend([
-            ArticleBlock(text=doc.page_content)
-            for doc in docs_transform
-        ])
+        self.article.extend(
+            [ArticleBlock(text=doc.page_content) for doc in docs_transform]
+        )
 
         md_splitter = MarkdownHeaderTextSplitter(
             headers_to_split_on=[
@@ -77,21 +74,26 @@ class SimpleWebLoader(BaseFileLoader):
                 ('#####', 'section_5'),
                 ('######', 'section_6'),
             ],
-            strip_headers=False
+            strip_headers=False,
         )
 
         head_split_docs = md_splitter.split_text(docs_transform[0].page_content)
+
+        file_uid = str(uuid4())
         for doc in head_split_docs:
-            if not 'section' in doc.metadata:
+            if 'section' not in doc.metadata:
                 doc.metadata['section'] = 'content'
 
-            doc.metadata.update({
-                'title': self.file_meta.title,
-                'author': self.file_meta.author,
-                'year': self.file_meta.year,
-                'type': 'content',
-                'source': self.file_meta.model_dump()['source']
-            })
+            doc.metadata.update(
+                {
+                    'title': self.file_meta.title,
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'content',
+                    'source': self.file_meta.model_dump()['source'],
+                    'file_id': file_uid,
+                }
+            )
 
             if 'additional_metadata' in kwargs:
                 doc.metadata.update(kwargs.get('additional_metadata'))
@@ -119,6 +121,7 @@ class JinaWebLoader(BaseFileLoader):
         proxy: 对解析网页使用的代理，若留空则不使用代理。
             无需显式设置，会自动从配置文件读取
     """
+
     jina_api: Optional[str] = None
     proxy: Optional[AnyHttpUrl] = None
 
@@ -159,12 +162,12 @@ class JinaWebLoader(BaseFileLoader):
                 'Accept': 'application/json',
                 'X-Remove-Selector': 'header, .class, #id',
                 'X-Retain-Images': 'none',
-                'X-Timeout': '120'
+                'X-Timeout': '120',
             }
             if self.jina_api:
                 headers['Authorization'] = f'Bearer {self.jina_api}'
-            # if self.proxy:
-            #     headers['X-Proxy-Url'] = self.proxy
+            if self.proxy:
+                headers['X-Proxy-Url'] = self.proxy
 
             response = requests.get(api_url, headers=headers, timeout=120)
 
@@ -176,7 +179,9 @@ class JinaWebLoader(BaseFileLoader):
         data = JinaData.model_validate(json_data)
         return data
 
-    def load(self, origin_file_path: AnyHttpUrl, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
+    def load(
+        self, origin_file_path: AnyHttpUrl, **kwargs
+    ) -> tuple[MarkdownMeta, list[Document]]:
         doc_data = self._read_webpage(origin_file_path)
 
         self.file_meta = MarkdownMeta(
@@ -185,12 +190,12 @@ class JinaWebLoader(BaseFileLoader):
             year=kwargs.get('year', -1),
             source=[
                 FileSource(source_url=origin_file_path, source_type=SourceType.WEB)
-            ]
+            ],
         )
 
         self.article = [
             ArticleBlock(text=doc_data.title, text_level=1),
-            ArticleBlock(text=doc_data.content)
+            ArticleBlock(text=doc_data.content),
         ]
 
         md_splitter = MarkdownHeaderTextSplitter(
@@ -202,21 +207,28 @@ class JinaWebLoader(BaseFileLoader):
                 ('#####', 'section_5'),
                 ('######', 'section_6'),
             ],
-            strip_headers=False
+            strip_headers=False,
         )
 
-        head_split_docs = md_splitter.split_text(doc_data.content.strip().lstrip('```markdown').rstrip('```'))
+        head_split_docs = md_splitter.split_text(
+            doc_data.content.strip().lstrip('```markdown').rstrip('```')
+        )
+        file_uid = str(uuid4())
+
         for doc in head_split_docs:
-            if not 'section' in doc.metadata:
+            if 'section' not in doc.metadata:
                 doc.metadata['section'] = 'content'
 
-            doc.metadata.update({
-                'title': self.file_meta.title,
-                'author': self.file_meta.author,
-                'year': self.file_meta.year,
-                'type': 'content',
-                'source': self.file_meta.model_dump()['source']
-            })
+            doc.metadata.update(
+                {
+                    'title': self.file_meta.title,
+                    'author': self.file_meta.author,
+                    'year': self.file_meta.year,
+                    'type': 'content',
+                    'source': self.file_meta.model_dump()['source'],
+                    'file_id': file_uid,
+                }
+            )
 
             if 'additional_metadata' in kwargs:
                 doc.metadata.update(kwargs.get('additional_metadata'))
@@ -230,8 +242,9 @@ class JinaWebLoader(BaseFileLoader):
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'abstract',
-                    'source': self.file_meta.model_dump()['source']
-                }
+                    'source': self.file_meta.model_dump()['source'],
+                    'file_id': file_uid,
+                },
             )
             if 'additional_metadata' in kwargs:
                 abstract_doc.metadata.update(kwargs.get('additional_metadata'))
