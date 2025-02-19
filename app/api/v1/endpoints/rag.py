@@ -201,7 +201,7 @@ async def chat(
                     event=ChatEventType.ANSWER, data=chunk.content
                 ).to_sse()
 
-        logger.info(f'AI: {full_response}')
+        logger.info(f'{model}: {full_response}')
         chat_message_history.add_user_message(message)
         chat_message_history.add_ai_message(full_response)
 
