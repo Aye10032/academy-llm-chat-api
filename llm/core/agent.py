@@ -574,7 +574,9 @@ class MainAgentState(BaseAgentState):
 class MainAgent(BaseModel):
     router_llm: Optional[ChatOpenAI] = None
     task_llm: Optional[ChatOpenAI] = None
+
     use_web: bool = False
+    available_knowledge_bases: list[str] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def setup_llm(self):
@@ -690,7 +692,10 @@ class MainAgent(BaseModel):
         tool_call_id = tool_call['id']
 
         subgraph = KnowledgeManageAgent(
-            router_llm=self.router_llm, task_llm=self.task_llm, use_web=self.use_web
+            router_llm=self.router_llm,
+            task_llm=self.task_llm,
+            use_web=self.use_web,
+            available_knowledge_bases=self.available_knowledge_bases,
         ).build()
 
         message = trim_messages(
