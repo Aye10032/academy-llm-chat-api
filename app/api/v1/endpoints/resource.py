@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
@@ -26,11 +27,14 @@ async def get_pdf_file(file_path: str):
     if not file_path.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail='仅支持PDF文件')
 
+    filename = os.path.basename(file_path)
+    encoded_filename = quote(filename)
+
     return FileResponse(
         file_path,
         media_type='application/pdf',
         headers={
-            'Content-Disposition': f'inline; filename="{os.path.basename(file_path)}"',
+            'Content-Disposition': f'inline; filename="{encoded_filename}"',
             'Access-Control-Allow-Origin': '*',
         },
     )
