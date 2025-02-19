@@ -13,12 +13,13 @@ from loguru import logger
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
+import app.crud.user as user_crud
 import app.crud.chat_session as chat_crud
+import app.crud.write_project as project_crud
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
 from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
 from app.crud.user import update_user
-from app.crud.write_project import insert_project, get_project_list, update_project
 from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
@@ -58,12 +59,12 @@ class PDFInfo(BaseModel):
     upload_time: datetime
 
 
-@router.post('/projects', description='新建写作工程')
+@router.post('/projects', response_model=WriteProject, description='新建写作工程')
 async def add_new_project(
     session: SessionDep,
-    description: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
-) -> str:
+    description: str = Form(...),
+):
     now_time = datetime.now()
 
     new_project = WriteProjectTable(
@@ -75,8 +76,22 @@ async def add_new_project(
         update_time=now_time,
     )
 
-    new_project = insert_project(session, new_project)
-    return new_project.uid
+    new_project = project_crud.insert(session, new_project)
+    return new_project
+
+
+@router.delete('/projects/{project_uid}', description='删除指定项目')
+async def delete_project(
+    session: SessionDep,
+    project_uid: str,
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
+):
+    project_crud.delete(session, project_uid)
+
+    if current_user.last_project == project_uid:
+        user_crud.update_user(session, current_user.email, UserUpdate(last_project=''))
+
+    # TODO 视情况是否要删除其他东西
 
 
 @router.get(
@@ -88,7 +103,7 @@ async def read_projects(
     offset: int = 0,
     limit: Annotated[int, Query(le=20)] = 20,
 ):
-    return get_project_list(session, current_user.email)
+    return project_crud.get_list(session, current_user.email)
 
 
 @router.post('/projects/{project_uid}/manuscripts', description='新建草稿')
@@ -133,7 +148,7 @@ async def save_manuscript(
     new_manuscript = insert_manuscript(session, new_manuscript)
 
     project = WriteProjectUpdate(last_manuscript=uid, update_time=now_time)
-    update_project(session, new_manuscript.project_uid, project)
+    project_crud.update(session, new_manuscript.project_uid, project)
 
     return new_manuscript.uid
 
@@ -276,7 +291,9 @@ async def chat(
     async def event_generator():
         try:
             if uploaded_files:
-                yield SSEMessage(event=ChatEventType.STATUS, data='文件已收到...').to_sse()
+                yield SSEMessage(
+                    event=ChatEventType.STATUS, data='文件已收到...'
+                ).to_sse()
 
             if not message:
                 yield SSEMessage(
@@ -321,7 +338,8 @@ async def chat(
                             if data['chunk'].content:
                                 full_response += data['chunk'].content
                                 yield SSEMessage(
-                                    event=ChatEventType.ANSWER, data=data['chunk'].content
+                                    event=ChatEventType.ANSWER,
+                                    data=data['chunk'].content,
                                 ).to_sse()
                         elif (
                             event['metadata']['langgraph_node']
@@ -330,7 +348,8 @@ async def chat(
                             data = event['data']
                             if data['chunk'].content:
                                 yield SSEMessage(
-                                    event=ChatEventType.WRITE, data=data['chunk'].content
+                                    event=ChatEventType.WRITE,
+                                    data=data['chunk'].content,
                                 ).to_sse()
 
                     elif event['event'] == 'on_chain_end':
@@ -389,11 +408,8 @@ async def chat(
                 chat_message_history.add_ai_message(full_response)
 
         except Exception as e:
-            logger.error(f"Unexpected error in event generator: {str(e)}")
-            yield SSEMessage(
-                event=ChatEventType.ERROR,
-                data=str(e)
-            ).to_sse()
+            logger.error(f'Unexpected error in event generator: {str(e)}')
+            yield SSEMessage(event=ChatEventType.ERROR, data=str(e)).to_sse()
 
         finally:
             # 清理临时文件
@@ -402,9 +418,9 @@ async def chat(
                     file_path = file_info['path']
                     if os.path.exists(file_path):
                         os.remove(file_path)
-                        logger.debug(f"Cleaned up temporary file: {file_path}")
+                        logger.debug(f'Cleaned up temporary file: {file_path}')
                 except Exception as e:
-                    logger.error(f"Error cleaning up file {file_path}: {str(e)}")
+                    logger.error(f'Error cleaning up file {file_path}: {str(e)}')
 
     async def generate_summary():
         conclude = conclude_chat(chat_message_history)

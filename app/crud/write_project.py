@@ -7,30 +7,25 @@ from app.models import WriteProjectTable
 from app.schemas.write_project import WriteProjectUpdate
 
 
-def get_project_list(
-        session: Session,
-        email: str,
-) -> list[WriteProjectTable]:
-    statement = select(WriteProjectTable).where(WriteProjectTable.user_email == email)
-    return session.exec(statement).all()
-
-
-def get_project(session, uid) -> Optional[WriteProjectTable]:
-    statement = select(WriteProjectTable).where(WriteProjectTable.uid == uid)
-    return session.exec(statement).first()
-
-
-def insert_project(session: Session, project: WriteProjectTable) -> WriteProjectTable:
+def insert(session: Session, project: WriteProjectTable) -> WriteProjectTable:
     session.add(project)
     session.commit()
     session.refresh(project)
     return project
 
 
-def update_project(
-        session: Session, project_uid: str, project: WriteProjectUpdate
+def delete(session: Session, uid: str):
+    statement = select(WriteProjectTable).where(WriteProjectTable.uid == uid)
+    results = session.exec(statement)
+    write_project = results.one()
+    session.delete(write_project)
+    session.commit()
+
+
+def update(
+    session: Session, project_uid: str, project: WriteProjectUpdate
 ) -> WriteProjectTable:
-    db_project = get_project(session, project_uid)
+    db_project = get(session, project_uid)
     if not db_project:
         raise HTTPException(status_code=404, detail='该记录不存在！')
 
@@ -40,3 +35,16 @@ def update_project(
     session.commit()
     session.refresh(db_project)
     return db_project
+
+
+def get_list(
+    session: Session,
+    email: str,
+) -> list[WriteProjectTable]:
+    statement = select(WriteProjectTable).where(WriteProjectTable.user_email == email)
+    return session.exec(statement).all()
+
+
+def get(session, uid) -> Optional[WriteProjectTable]:
+    statement = select(WriteProjectTable).where(WriteProjectTable.uid == uid)
+    return session.exec(statement).first()

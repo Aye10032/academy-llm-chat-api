@@ -26,6 +26,14 @@ def delete(
     session.delete(chat_session)
     session.commit()
 
+def delete_by_parent(session: Session, parent_uid: str):
+    statement = (select(ChatSessionTable)
+                 .where(ChatSessionTable.parent_uid == parent_uid))
+    results = session.exec(statement)
+    chat_session = results.all()
+    session.delete(chat_session)
+    session.commit()
+
 
 def update(
         session: Session, chat_uid: str, chat_session: ChatSessionUpdate
