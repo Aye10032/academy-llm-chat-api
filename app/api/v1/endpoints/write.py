@@ -27,6 +27,7 @@ from app.schemas.user import UserUpdate
 from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent
 from llm.core.chain import conclude_chat
+from llm.core.model import load_llm
 from llm.tool.modify import OptimizerOutput, RewriterOutput
 
 router = APIRouter()
@@ -234,8 +235,12 @@ async def chat(
     message: str = Form(...),
     current_text: str = Form(None),
     files: list[UploadFile] = File([]),
+    model_name: str = Form(...),
+    temperature: float = Form(...),
+    context_length: str = Form(...),
 ):
     logger.debug(f'project: {project_uid} session:{chat_uid}')
+    logger.info(f'{current_user.username}: {message}')
 
     chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
 
@@ -278,23 +283,22 @@ async def chat(
                 event=ChatEventType.ANSWER, data='文件已收到，请给出你的需求'
             ).to_sse()
         else:
-            logger.info(f'{current_user.username}: {message}')
             yield SSEMessage(event=ChatEventType.STATUS, data='唤醒智能体').to_sse()
-
             await asyncio.sleep(0.1)
 
             cut_messages = trim_messages(
                 chat_message_history.messages,
                 strategy='last',
                 token_counter=len,
-                max_tokens=5,
+                max_tokens=context_length,
                 start_on='human',
-                end_on='ai',
+                end_on=('ai', 'tool'),
                 include_system=False,
             )
             cut_messages.append(HumanMessage(content=message))
 
-            app = MainAgent(use_web=False).build()
+            llm = load_llm(model_name, temperature)
+            app = MainAgent(use_web=False, task_llm=llm).build()
             full_response = ''
             await asyncio.sleep(0.1)
 

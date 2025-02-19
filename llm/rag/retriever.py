@@ -13,7 +13,7 @@ from langchain_core.vectorstores import VectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
 
-from llm.core.model import BgeReranker, load_gpt4o_mini
+from llm.core.model import BgeReranker, load_llm
 from llm.core.template import MULTIQUERY_SYSTEM_EN, MULTIQUERY_HUMAN_EN
 
 
@@ -195,7 +195,7 @@ def base_retriever(
         reranker: BgeReranker
 ) -> ScoreRetriever:
     # TODO 视情况决定是否翻译句子
-    retriever_llm = load_gpt4o_mini()
+    retriever_llm = load_llm('gpt-4o-mini')
     query_prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=MULTIQUERY_SYSTEM_EN),
         ('human', MULTIQUERY_HUMAN_EN)

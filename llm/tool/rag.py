@@ -12,7 +12,7 @@ from sqlmodel import Session
 
 from app.crud.knowledge_base import get_knowledge_bases
 from app.db.session import engine
-from llm.core.model import load_embedding, load_gpt4o
+from llm.core.model import load_embedding, load_llm
 from llm.core.template import SELECT_KNOWLEDGE_BASE_SYSTEM_ZH
 from llm.rag.retriever import ExprRetriever
 from llm.rag.storage import get_vector_db, get_doc_db
@@ -44,7 +44,7 @@ class SelectKnowledgeBase(BaseTool):
     @model_validator(mode='after')
     def init_llm(self):
         if self.llm is None:
-            self.llm = load_gpt4o()
+            self.llm = load_llm('gpt-4o')
 
         return self
 

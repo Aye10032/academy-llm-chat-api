@@ -7,7 +7,7 @@ from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from pydantic import model_validator, BaseModel, Field
 
-from llm.core.model import load_gpt4o
+from llm.core.model import load_llm
 from llm.core.template import MODIFY_SYSTEM_ZH, REWRITER_SYSTEM_ZH, OPTIMIZER_HUMAN_ZH
 
 
@@ -34,7 +34,7 @@ class Rewriter(BaseTool):
     @model_validator(mode='after')
     def init_llm(self):
         if self.llm is None:
-            self.llm = load_gpt4o()
+            self.llm = load_llm('gpt-4o-mini')
 
         return self
 
@@ -80,7 +80,7 @@ class Modifier(BaseTool):
     @model_validator(mode='after')
     def init_llm(self):
         if self.llm is None:
-            self.llm = load_gpt4o()
+            self.llm = load_llm('gpt-4o')
 
         return self
 

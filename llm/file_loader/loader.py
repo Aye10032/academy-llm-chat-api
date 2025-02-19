@@ -11,7 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from pydantic import FilePath, BaseModel, Field, AnyHttpUrl
 
-from llm.core.model import load_glm4_flash
+from llm.core.model import load_llm
 from llm.schemas import ArticleBlock, MarkdownMeta
 
 SYS_PROMPT = """你是一个专业的文本摘要生成器。你的任务是根据用户提供的文章，生成简洁、准确、信息量丰富的摘要。摘要应：
@@ -46,6 +46,7 @@ class BaseFileLoader(BaseModel, ABC):
         generate_abstract: 当文档不存在摘要章节时，通过大模型生成摘要
         llm: 若generate_abstract为true，则必须传入一个可用的大模型，用于生成总结
     """
+
     article: list[ArticleBlock] = Field(default_factory=list)
     file_meta: Optional[MarkdownMeta] = None
 
@@ -69,7 +70,7 @@ class BaseFileLoader(BaseModel, ABC):
 
     @abstractmethod
     def load(
-            self, origin_file_path: FilePath | AnyHttpUrl, **kwargs
+        self, origin_file_path: FilePath | AnyHttpUrl, **kwargs
     ) -> tuple[MarkdownMeta, list[Document]]:
         raise NotImplementedError
 
@@ -102,16 +103,18 @@ class BaseFileLoader(BaseModel, ABC):
         return text
 
     def __article_to_str(self) -> str:
-        return '  \n'.join([
-            block.text
-            if block.text_level == 0
-            else f'{"#" * block.text_level} {block.text}'  # pylint: disable=inconsistent-quotes
-            for block in self.article
-        ])
+        return '  \n'.join(
+            [
+                block.text
+                if block.text_level == 0
+                else f'{"#" * block.text_level} {block.text}'  # pylint: disable=inconsistent-quotes
+                for block in self.article
+            ]
+        )
 
     def _conclude_article(self) -> str:
         if self.llm is None:
-            self.llm = load_glm4_flash()
+            self.llm = load_llm('glm-4-flash')
 
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -125,7 +128,9 @@ class BaseFileLoader(BaseModel, ABC):
 
         return result.content
 
-    def _article_to_doc(self, *, additional_metadata: Optional[dict[str, Any]] = None) -> list[Document]:
+    def _article_to_doc(
+        self, *, additional_metadata: Optional[dict[str, Any]] = None
+    ) -> list[Document]:
         md_stream = io.StringIO()
         for section in self.article:
             if section.text_level == 0:
@@ -145,28 +150,34 @@ class BaseFileLoader(BaseModel, ABC):
                 ('#####', 'section_5'),
                 ('######', 'section_6'),
             ],
-            strip_headers=not self.keep_title
+            strip_headers=not self.keep_title,
         )
         head_split_docs = md_splitter.split_text(md_text)
 
         has_abstract = False
         for doc in head_split_docs:
-            if (self.abstract_level in doc.metadata and
-                    self.abstract_key in doc.metadata[self.abstract_level].lower()):
-                doc.metadata.update({
-                    'author': self.file_meta.author,
-                    'year': self.file_meta.year,
-                    'type': 'abstract',
-                    'source': self.file_meta.model_dump()['source']
-                })
+            if (
+                self.abstract_level in doc.metadata
+                and self.abstract_key in doc.metadata[self.abstract_level].lower()
+            ):
+                doc.metadata.update(
+                    {
+                        'author': self.file_meta.author,
+                        'year': self.file_meta.year,
+                        'type': 'abstract',
+                        'source': self.file_meta.model_dump()['source'],
+                    }
+                )
                 has_abstract = True
             else:
-                doc.metadata.update({
-                    'author': self.file_meta.author,
-                    'year': self.file_meta.year,
-                    'type': 'content',
-                    'source': self.file_meta.model_dump()['source']
-                })
+                doc.metadata.update(
+                    {
+                        'author': self.file_meta.author,
+                        'year': self.file_meta.year,
+                        'type': 'content',
+                        'source': self.file_meta.model_dump()['source'],
+                    }
+                )
 
             if additional_metadata:
                 doc.metadata.update(additional_metadata)
@@ -189,8 +200,8 @@ class BaseFileLoader(BaseModel, ABC):
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'toc',
-                    'source': self.file_meta.model_dump()['source']
-                }
+                    'source': self.file_meta.model_dump()['source'],
+                },
             )
 
             if additional_metadata:
@@ -208,8 +219,8 @@ class BaseFileLoader(BaseModel, ABC):
                     'author': self.file_meta.author,
                     'year': self.file_meta.year,
                     'type': 'abstract',
-                    'source': self.file_meta.model_dump()['source']
-                }
+                    'source': self.file_meta.model_dump()['source'],
+                },
             )
 
             if additional_metadata:

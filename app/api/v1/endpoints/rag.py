@@ -7,6 +7,7 @@ import asyncio
 
 from fastapi import APIRouter, Query, Depends, Form
 from langchain_community.chat_message_histories import SQLChatMessageHistory
+from langchain_core.messages import trim_messages
 from loguru import logger
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
@@ -139,6 +140,9 @@ async def chat(
     chat_uid: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
     message: str = Form(...),
+    model_name: str = Form(...),
+    temperature: float = Form(...),
+    context_length: str = Form(...),
 ):
     chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
     knowledge_base = get_knowledge_base(session, knowledge_base_uid)
@@ -150,8 +154,7 @@ async def chat(
     async def generate():
         # 发送模型加载状态
         yield SSEMessage(event=ChatEventType.STATUS, data='正在加载模型...').to_sse()
-
-        await asyncio.sleep(0.1)  # 添加小延迟
+        await asyncio.sleep(0.1)
 
         embedding = load_embedding()
         reranker = load_reranker()
@@ -162,8 +165,7 @@ async def chat(
         yield SSEMessage(
             event=ChatEventType.STATUS, data='正在检索相关文档...'
         ).to_sse()
-
-        await asyncio.sleep(0.1)  # 添加小延迟
+        await asyncio.sleep(0.1)
 
         retriever = base_retriever(vec_db, doc_db, reranker)
         docs = retriever.invoke(message)
@@ -173,17 +175,25 @@ async def chat(
             {'content': doc.page_content, 'metadata': doc.metadata} for doc in docs
         ]
         yield SSEMessage(event=ChatEventType.DOCS, data=docs_data).to_sse()
-
-        await asyncio.sleep(0.1)  # 添加小延迟
+        await asyncio.sleep(0.1)
 
         # 发送生成回答状态
         yield SSEMessage(event=ChatEventType.STATUS, data='正在生成回答...').to_sse()
 
-        chain = rag_chain()
+        chain = rag_chain(model_name, temperature)
+        short_message = trim_messages(
+            chat_message_history.messages,
+            strategy='last',
+            token_counter=len,
+            max_tokens=context_length,
+            start_on='human',
+            end_on=('ai', 'tool'),
+            include_system=False,
+        )
         full_response = ''
 
         async for chunk in chain.astream(
-            {'chat_history': [], 'docs': docs, 'question': message}
+            {'chat_history': short_message, 'docs': docs, 'question': message}
         ):
             if chunk.content:
                 full_response += chunk.content

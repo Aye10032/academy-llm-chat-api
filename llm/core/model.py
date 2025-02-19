@@ -21,7 +21,7 @@ from transformers import (
     AutoModel,
     PreTrainedModel,
     AutoModelForSequenceClassification,
-    AutoModelForCausalLM
+    AutoModelForCausalLM,
 )
 
 from app.core.config import get_settings
@@ -37,6 +37,7 @@ llm_cfg = get_settings().llm
 
 class BgeM3Embeddings(BaseModel, Embeddings):
     """Bge M3 Embedding模型"""
+
     bge_model_name: str = 'BAAI/bge-m3'
     bge_tokenizer: Any = None
     bge_model: Any = None
@@ -69,17 +70,29 @@ class BgeM3Embeddings(BaseModel, Embeddings):
 
         if self.local_load:
             try:
-                self.bge_tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(self.local_path)
-                self.bge_model: PreTrainedModel = AutoModel.from_pretrained(self.local_path)
+                self.bge_tokenizer: PreTrainedTokenizerFast = (
+                    AutoTokenizer.from_pretrained(self.local_path)
+                )
+                self.bge_model: PreTrainedModel = AutoModel.from_pretrained(
+                    self.local_path
+                )
             except EnvironmentError:
-                logger.warning('Load model from local fail. Download from huggingface...')
+                logger.warning(
+                    'Load model from local fail. Download from huggingface...'
+                )
 
                 if get_settings().server.network.USE_PROXY:
                     k, v = get_settings().server.network.PROXY.split('://')
-                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name, proxies={k: v})
-                    self.bge_model = AutoModel.from_pretrained(self.bge_model_name, proxies={k: v})
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(
+                        self.bge_model_name, proxies={k: v}
+                    )
+                    self.bge_model = AutoModel.from_pretrained(
+                        self.bge_model_name, proxies={k: v}
+                    )
                 else:
-                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(
+                        self.bge_model_name
+                    )
                     self.bge_model = AutoModel.from_pretrained(self.bge_model_name)
 
                 # save to local
@@ -112,11 +125,11 @@ class BgeM3Embeddings(BaseModel, Embeddings):
 
     @torch.no_grad()
     def encode(
-            self,
-            sentences: Union[list[str], str],
-            normalize_embeddings: bool = True,
-            batch_size: int = 12,
-            max_length: int = 8192,
+        self,
+        sentences: Union[list[str], str],
+        normalize_embeddings: bool = True,
+        batch_size: int = 12,
+        max_length: int = 8192,
     ) -> np.ndarray:
         input_was_string = False
         if isinstance(sentences, str):
@@ -125,11 +138,11 @@ class BgeM3Embeddings(BaseModel, Embeddings):
 
         all_dense_embeddings = []
         for start_index in tqdm(
-                range(0, len(sentences), batch_size),
-                desc='Inference Embeddings',
-                disable=len(sentences) < 256
+            range(0, len(sentences), batch_size),
+            desc='Inference Embeddings',
+            disable=len(sentences) < 256,
         ):
-            sentences_batch = sentences[start_index:start_index + batch_size]
+            sentences_batch = sentences[start_index : start_index + batch_size]
             batch_data = self.bge_tokenizer(
                 sentences_batch,
                 padding=True,
@@ -138,8 +151,12 @@ class BgeM3Embeddings(BaseModel, Embeddings):
                 max_length=max_length,
             ).to(self.device)
 
-            last_hidden_state = self.bge_model(**batch_data, return_dict=True).last_hidden_state
-            dense_vecs = self.dense_embedding(last_hidden_state, batch_data['attention_mask'])
+            last_hidden_state = self.bge_model(
+                **batch_data, return_dict=True
+            ).last_hidden_state
+            dense_vecs = self.dense_embedding(
+                last_hidden_state, batch_data['attention_mask']
+            )
 
             if normalize_embeddings:
                 dense_vecs = torch.nn.functional.normalize(dense_vecs, dim=-1)
@@ -165,6 +182,7 @@ class BgeM3Embeddings(BaseModel, Embeddings):
 
 class BgeReranker(BaseModel):
     """BGE Reranker V2-M3模型"""
+
     bge_model_name: str = 'BAAI/bge-reranker-v2-m3'
     bge_tokenizer: Any = None
     bge_model: Any = None
@@ -175,7 +193,7 @@ class BgeReranker(BaseModel):
     use_fp16: bool = False,
     device: Union[str, int] = None
     """
-    use_fp16: bool = False,
+    use_fp16: bool = (False,)
     device: Optional[str] = None
 
     """
@@ -198,18 +216,32 @@ class BgeReranker(BaseModel):
 
         if self.local_load:
             try:
-                self.bge_tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(self.local_path)
-                self.bge_model: PreTrainedModel = AutoModelForSequenceClassification.from_pretrained(self.local_path)
+                self.bge_tokenizer: PreTrainedTokenizerFast = (
+                    AutoTokenizer.from_pretrained(self.local_path)
+                )
+                self.bge_model: PreTrainedModel = (
+                    AutoModelForSequenceClassification.from_pretrained(self.local_path)
+                )
             except EnvironmentError:
-                logger.warning('Load model from local fail. Download from huggingface...')
+                logger.warning(
+                    'Load model from local fail. Download from huggingface...'
+                )
 
                 if get_settings().server.network.USE_PROXY:
                     k, v = get_settings().server.network.PROXY.split('://')
-                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name, proxies={k: v})
-                    self.bge_model = AutoModelForSequenceClassification.from_pretrained(self.bge_model_name, proxies={k: v})
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(
+                        self.bge_model_name, proxies={k: v}
+                    )
+                    self.bge_model = AutoModelForSequenceClassification.from_pretrained(
+                        self.bge_model_name, proxies={k: v}
+                    )
                 else:
-                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
-                    self.bge_model = AutoModelForSequenceClassification.from_pretrained(self.bge_model_name)
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(
+                        self.bge_model_name
+                    )
+                    self.bge_model = AutoModelForSequenceClassification.from_pretrained(
+                        self.bge_model_name
+                    )
 
                 # save to local
                 os.makedirs(self.local_path, exist_ok=True)
@@ -217,7 +249,9 @@ class BgeReranker(BaseModel):
                 self.bge_model.save_pretrained(self.local_path)
         else:
             self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
-            self.bge_model = AutoModelForSequenceClassification.from_pretrained(self.bge_model_name)
+            self.bge_model = AutoModelForSequenceClassification.from_pretrained(
+                self.bge_model_name
+            )
 
         if not self.device:
             self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -233,24 +267,23 @@ class BgeReranker(BaseModel):
 
     @torch.no_grad()
     def compute_score(
-            self,
-            sentence_pairs: Union[list[tuple[str, str]], tuple[str, str]],
-            batch_size: int = 256,
-            max_length: int = 512,
-            normalize: bool = False
+        self,
+        sentence_pairs: Union[list[tuple[str, str]], tuple[str, str]],
+        batch_size: int = 256,
+        max_length: int = 512,
+        normalize: bool = False,
     ) -> list[float]:
-
         assert isinstance(sentence_pairs, list)
         if isinstance(sentence_pairs[0], str):
             sentence_pairs = [sentence_pairs]
 
         all_scores = []
         for start_index in tqdm(
-                range(0, len(sentence_pairs), batch_size),
-                desc='Compute Scores',
-                disable=len(sentence_pairs) < 128
+            range(0, len(sentence_pairs), batch_size),
+            desc='Compute Scores',
+            disable=len(sentence_pairs) < 128,
         ):
-            sentences_batch = sentence_pairs[start_index:start_index + batch_size]
+            sentences_batch = sentence_pairs[start_index : start_index + batch_size]
             inputs = self.bge_tokenizer(
                 sentences_batch,
                 padding=True,
@@ -259,7 +292,13 @@ class BgeReranker(BaseModel):
                 max_length=max_length,
             ).to(self.device)
 
-            scores = self.bge_model(**inputs, return_dict=True).logits.view(-1, ).float()
+            scores = (
+                self.bge_model(**inputs, return_dict=True)
+                .logits.view(
+                    -1,
+                )
+                .float()
+            )
             all_scores.extend(scores.cpu().numpy().tolist())
 
         def sigmoid(x):
@@ -271,16 +310,13 @@ class BgeReranker(BaseModel):
         return all_scores
 
     def compress_documents(
-            self,
-            documents: list[Document],
-            query: str,
-            callbacks: Optional[Callbacks] = None,
+        self,
+        documents: list[Document],
+        query: str,
+        callbacks: Optional[Callbacks] = None,
     ) -> list[Document]:
-
         sentence_pairs = [
-            (query, doc.page_content)
-            for doc in documents
-            if isinstance(doc, Document)
+            (query, doc.page_content) for doc in documents if isinstance(doc, Document)
         ]
         rerank_scores = []
 
@@ -288,28 +324,32 @@ class BgeReranker(BaseModel):
             if i + 10 >= len(sentence_pairs):
                 batch_pairs = sentence_pairs[i:]
             else:
-                batch_pairs = sentence_pairs[i:i + 10]
+                batch_pairs = sentence_pairs[i : i + 10]
 
             batch_size: int = self.encode_kwargs.get('batch_size', 256)
             max_length: int = self.encode_kwargs.get('max_length', 512)
             normalize: bool = self.encode_kwargs.get('normalize', False)
-            batch_scores = self.compute_score(batch_pairs, batch_size, max_length, normalize)
+            batch_scores = self.compute_score(
+                batch_pairs, batch_size, max_length, normalize
+            )
             rerank_scores.extend(batch_scores)
 
         rerank_results = list(zip(rerank_scores, documents))
         rerank_results = sorted(rerank_results, key=lambda x: x[0], reverse=True)
 
         final_results = [
-            doc for r in rerank_results
-            if (doc := r[1]).metadata.update({'score': r[0]}) or (not self.drop_low_score or r[0] > self.low_score)
+            doc
+            for r in rerank_results
+            if (doc := r[1]).metadata.update({'score': r[0]})
+            or (not self.drop_low_score or r[0] > self.low_score)
         ]
         return final_results
 
     async def acompress_documents(
-            self,
-            documents: list[Document],
-            query: str,
-            callbacks: Optional[Callbacks] = None,
+        self,
+        documents: list[Document],
+        query: str,
+        callbacks: Optional[Callbacks] = None,
     ) -> Sequence[Document]:
         """Compress retrieved documents given the query context."""
         return await run_in_executor(
@@ -317,10 +357,10 @@ class BgeReranker(BaseModel):
         )
 
     def compress_manuscripts(
-            self,
-            manuscripts: list[Manuscript],
-            query: str,
-            callbacks: Optional[Callbacks] = None,
+        self,
+        manuscripts: list[Manuscript],
+        query: str,
+        callbacks: Optional[Callbacks] = None,
     ):
         sentence_pairs = [
             (query, draft.title)
@@ -333,27 +373,26 @@ class BgeReranker(BaseModel):
             if i + 10 >= len(sentence_pairs):
                 batch_pairs = sentence_pairs[i:]
             else:
-                batch_pairs = sentence_pairs[i:i + 10]
+                batch_pairs = sentence_pairs[i : i + 10]
 
             batch_size: int = self.encode_kwargs.get('batch_size', 256)
             max_length: int = self.encode_kwargs.get('max_length', 512)
             normalize: bool = self.encode_kwargs.get('normalize', False)
-            batch_scores = self.compute_score(batch_pairs, batch_size, max_length, normalize)
+            batch_scores = self.compute_score(
+                batch_pairs, batch_size, max_length, normalize
+            )
             rerank_scores.extend(batch_scores)
 
         rerank_results = list(zip(rerank_scores, manuscripts))
         rerank_results = sorted(rerank_results, key=lambda x: x[0], reverse=True)
 
-        final_results = [
-            r[1]
-            for r in rerank_results
-            if r[0] > self.low_score
-        ]
+        final_results = [r[1] for r in rerank_results if r[0] > self.low_score]
         return final_results
 
 
 class ReaderLM(BaseModel):
     """JINA HTML转markdown小模型"""
+
     jina_model_name: str
     jina_tokenizer: Any = None
     jina_model: Any = None
@@ -364,7 +403,7 @@ class ReaderLM(BaseModel):
     use_fp16: bool = False,
     device: Union[str, int] = None
     """
-    use_fp16: bool = False,
+    use_fp16: bool = (False,)
     device: Optional[str] = None
 
     """
@@ -386,18 +425,32 @@ class ReaderLM(BaseModel):
 
         if self.local_load:
             try:
-                self.jina_tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(self.local_path)
-                self.jina_model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(self.local_path)
+                self.jina_tokenizer: PreTrainedTokenizerFast = (
+                    AutoTokenizer.from_pretrained(self.local_path)
+                )
+                self.jina_model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
+                    self.local_path
+                )
             except EnvironmentError:
-                logger.warning('Load model from local fail. Download from huggingface...')
+                logger.warning(
+                    'Load model from local fail. Download from huggingface...'
+                )
 
                 if get_settings().server.network.USE_PROXY:
                     k, v = get_settings().server.network.PROXY.split('://')
-                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.jina_model_name, proxies={k: v})
-                    self.bge_model = AutoModelForCausalLM.from_pretrained(self.jina_model_name, proxies={k: v})
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(
+                        self.jina_model_name, proxies={k: v}
+                    )
+                    self.bge_model = AutoModelForCausalLM.from_pretrained(
+                        self.jina_model_name, proxies={k: v}
+                    )
                 else:
-                    self.jina_tokenizer = AutoTokenizer.from_pretrained(self.jina_model_name, force_download=True)
-                    self.jina_model = AutoModelForCausalLM.from_pretrained(self.jina_model_name, force_download=True)
+                    self.jina_tokenizer = AutoTokenizer.from_pretrained(
+                        self.jina_model_name, force_download=True
+                    )
+                    self.jina_model = AutoModelForCausalLM.from_pretrained(
+                        self.jina_model_name, force_download=True
+                    )
 
                 # save to local
                 os.makedirs(self.local_path, exist_ok=True)
@@ -421,7 +474,7 @@ class ReaderLM(BaseModel):
 
     @staticmethod
     def create_prompt(
-            text: str, tokenizer=None, instruction: str = None, schema: str = None
+        text: str, tokenizer=None, instruction: str = None, schema: str = None
     ) -> str:
         """
         Create a prompt for the model with optional instruction and JSON schema.
@@ -446,13 +499,18 @@ class ReaderLM(BaseModel):
         )
 
     def html_to_md(self, html: str) -> str:
-
         html = clean_html(html)
 
         input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer)
-        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
+        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(
+            self.device
+        )
         outputs = self.jina_model.generate(
-            inputs, max_new_tokens=1024, temperature=0, do_sample=False, repetition_penalty=1.08
+            inputs,
+            max_new_tokens=1024,
+            temperature=0,
+            do_sample=False,
+            repetition_penalty=1.08,
         )
 
         return self.jina_tokenizer.decode(outputs[0])
@@ -480,9 +538,13 @@ class ReaderLM(BaseModel):
         """
 
         html = clean_html(html)
-        input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer, schema=schema)
+        input_prompt = self.create_prompt(
+            html, tokenizer=self.jina_tokenizer, schema=schema
+        )
 
-        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
+        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(
+            self.device
+        )
         outputs = self.jina_model.generate(
             inputs, max_new_tokens=1024, do_sample=False, repetition_penalty=1.08
         )
@@ -497,11 +559,9 @@ def load_embedding() -> BgeM3Embeddings:
         bge_model_name=embd_cfg.MODEL,
         use_fp16=embd_cfg.FP16,
         device=embd_cfg.DEVICE,
-        encode_kwargs={
-            'normalize_embeddings': embd_cfg.NORMALIZE
-        },
+        encode_kwargs={'normalize_embeddings': embd_cfg.NORMALIZE},
         local_load=embd_cfg.SAVE_LOCAL,
-        local_path=embd_cfg.LOCAL_PATH
+        local_path=embd_cfg.LOCAL_PATH,
     )
 
     return embedding
@@ -514,11 +574,9 @@ def load_reranker() -> BgeReranker:
         bge_model_name=reranker_cfg.MODEL,
         use_fp16=reranker_cfg.FP16,
         device=reranker_cfg.DEVICE,
-        encode_kwargs={
-            'normalize': reranker_cfg.NORMALIZE
-        },
+        encode_kwargs={'normalize': reranker_cfg.NORMALIZE},
         local_load=reranker_cfg.SAVE_LOCAL,
-        local_path=reranker_cfg.LOCAL_PATH
+        local_path=reranker_cfg.LOCAL_PATH,
     )
 
     return reranker
@@ -533,90 +591,132 @@ def load_jina_reader() -> ReaderLM:
         use_fp16=jina_cfg.FP16,
         device=jina_cfg.DEVICE,
         local_load=jina_cfg.SAVE_LOCAL,
-        local_path=jina_cfg.LOCAL_PATH
+        local_path=jina_cfg.LOCAL_PATH,
     )
 
     return reader
 
 
-def load_gpt4o() -> ChatOpenAI:
+def _load_gpt4o(temperature: float = 0.4) -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
         http_client = httpx.Client(proxy=get_settings().server.network.PROXY)
         llm = ChatOpenAI(
             model='gpt-4o',
             http_client=http_client,
-            temperature=0.4,
+            temperature=temperature,
             base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
-            api_key=llm_cfg.openai.API_KEY
+            api_key=llm_cfg.openai.API_KEY,
         )
     else:
         llm = ChatOpenAI(
             model='gpt-4o',
-            temperature=0.4,
+            temperature=temperature,
             base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
-            api_key=llm_cfg.openai.API_KEY
+            api_key=llm_cfg.openai.API_KEY,
         )
     return llm
 
 
-def load_gpt4o_mini() -> ChatOpenAI:
+def _load_gpt4o_mini(temperature: float = 0.4) -> ChatOpenAI:
     if llm_cfg.openai.USE_PROXY:
         http_client = httpx.Client(proxy=get_settings().server.network.PROXY)
         llm = ChatOpenAI(
             model='gpt-4o-mini',
             http_client=http_client,
-            temperature=0.4,
+            temperature=temperature,
             base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
-            api_key=llm_cfg.openai.API_KEY
+            api_key=llm_cfg.openai.API_KEY,
         )
     else:
         llm = ChatOpenAI(
             model='gpt-4o-mini',
-            temperature=0.4,
+            temperature=temperature,
             base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
-            api_key=llm_cfg.openai.API_KEY
+            api_key=llm_cfg.openai.API_KEY,
         )
     return llm
 
 
-def load_glm4_flash() -> ChatOpenAI:
+def _load_gpto3_mini(temperature: float = 0.4) -> ChatOpenAI:
+    if llm_cfg.openai.USE_PROXY:
+        http_client = httpx.Client(proxy=get_settings().server.network.PROXY)
+        llm = ChatOpenAI(
+            model='gpt-o3-mini',
+            http_client=http_client,
+            temperature=temperature,
+            base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
+            api_key=llm_cfg.openai.API_KEY,
+        )
+    else:
+        llm = ChatOpenAI(
+            model='gpt-o3-mini',
+            temperature=temperature,
+            base_url=llm_cfg.openai.BASE_URL if llm_cfg.openai.BASE_URL else None,
+            api_key=llm_cfg.openai.API_KEY,
+        )
+    return llm
+
+
+def _load_glm4_flash(temperature: float = 0.4) -> ChatOpenAI:
     llm = ChatOpenAI(
         model='glm-4-flash',
         base_url=llm_cfg.zhipu.BASE_URL,
         api_key=llm_cfg.zhipu.API_KEY,
-        temperature=0.05,
+        temperature=temperature,
     )
 
     return llm
 
 
-def load_glm4_air() -> ChatOpenAI:
+def _load_glm4_air(temperature: float = 0.4) -> ChatOpenAI:
     llm = ChatOpenAI(
         model='glm-4-air',
         base_url=llm_cfg.zhipu.BASE_URL,
         api_key=llm_cfg.zhipu.API_KEY,
-        temperature=0.05,
+        temperature=temperature,
     )
 
     return llm
 
 
-def load_deepseek_v3(temperature: float = 0.0) -> ChatOpenAI:
+def _load_deepseek_v3(temperature: float = 0.4) -> ChatOpenAI:
     llm = ChatOpenAI(
         model='deepseek-ai/DeepSeek-V3',
         base_url=llm_cfg.deepseek.BASE_URL,
         api_key=llm_cfg.deepseek.API_KEY,
-        temperature=temperature
+        temperature=temperature,
     )
 
     return llm
 
 
-def load_deepseek_r1() -> ChatOpenAI:
+def _load_deepseek_r1(temperature: float = 0.4) -> ChatOpenAI:
     llm = ChatOpenAI(
         model='deepseek-reasoner',
         base_url=llm_cfg.deepseek.BASE_URL,
-        api_key=llm_cfg.deepseek.API_KEY
+        api_key=llm_cfg.deepseek.API_KEY,
+        temperature=temperature,
     )
 
     return llm
+
+
+def load_llm(
+    model_name: str,
+    temperature: float = 0.4,
+):
+    match model_name:
+        case 'gpt-4o':
+            return _load_gpt4o(temperature)
+        case 'gpt-03-mini':
+            return _load_gpto3_mini(temperature)
+        case 'deepseek-v3':
+            return _load_deepseek_v3(temperature)
+        case 'deepseek-r1':
+            return _load_deepseek_r1(temperature)
+        case 'glm-4-flash':
+            return _load_glm4_flash(temperature)
+        case 'glm-4-air':
+            return _load_glm4_air(temperature)
+        case _:
+            return _load_gpt4o_mini(temperature)
