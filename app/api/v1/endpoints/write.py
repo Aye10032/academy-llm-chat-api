@@ -237,7 +237,7 @@ async def chat(
     files: list[UploadFile] = File([]),
     model: str = Form(...),
     temperature: float = Form(...),
-    context_length: str = Form(...),
+    context_length: int = Form(...),
 ):
     logger.debug(f'project: {project_uid} session:{chat_uid}')
     logger.info(f'{current_user.username}: {message}')

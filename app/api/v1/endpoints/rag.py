@@ -142,7 +142,7 @@ async def chat(
     message: str = Form(...),
     model: str = Form(...),
     temperature: float = Form(...),
-    context_length: str = Form(...),
+    context_length: int = Form(...),
 ):
     chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
     knowledge_base = get_knowledge_base(session, knowledge_base_uid)
