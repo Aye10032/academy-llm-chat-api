@@ -140,7 +140,7 @@ async def chat(
     chat_uid: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
     message: str = Form(...),
-    model_name: str = Form(...),
+    model: str = Form(...),
     temperature: float = Form(...),
     context_length: str = Form(...),
 ):
@@ -180,7 +180,7 @@ async def chat(
         # 发送生成回答状态
         yield SSEMessage(event=ChatEventType.STATUS, data='正在生成回答...').to_sse()
 
-        chain = rag_chain(model_name, temperature)
+        chain = rag_chain(model, temperature)
         short_message = trim_messages(
             chat_message_history.messages,
             strategy='last',

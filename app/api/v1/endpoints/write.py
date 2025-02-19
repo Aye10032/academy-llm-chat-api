@@ -235,7 +235,7 @@ async def chat(
     message: str = Form(...),
     current_text: str = Form(None),
     files: list[UploadFile] = File([]),
-    model_name: str = Form(...),
+    model: str = Form(...),
     temperature: float = Form(...),
     context_length: str = Form(...),
 ):
@@ -297,7 +297,7 @@ async def chat(
             )
             cut_messages.append(HumanMessage(content=message))
 
-            llm = load_llm(model_name, temperature)
+            llm = load_llm(model, temperature)
             app = MainAgent(use_web=False, task_llm=llm).build()
             full_response = ''
             await asyncio.sleep(0.1)
