@@ -60,3 +60,12 @@ def delete_knowledge_base(session: Session, uid: str):
         logger.info(f'删除数据 {KnowledgeBaseTable.__tablename__}:{kb.table_name}')
         session.delete(kb)
         session.commit()
+
+def delete_by_name(session: Session, name: str):
+    statement = select(KnowledgeBaseTable).where(KnowledgeBaseTable.table_name == name)
+    results = session.exec(statement)
+    kb = results.first()
+    if kb:
+        logger.info(f'删除数据 {KnowledgeBaseTable.__tablename__}:{kb.table_name}')
+        session.delete(kb)
+        session.commit()
