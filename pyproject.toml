@@ -20,6 +20,7 @@ dependencies = [
     "pydantic-settings>=2.7.1",
     "pydantic[email]>=2.10.6",
     "pyjwt>=2.10.1",
+    "pyppeteer>=2.0.0",
     "python-multipart>=0.0.20",
     "sqlmodel>=0.0.22",
     "torch>=2.6.0",
