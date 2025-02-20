@@ -55,6 +55,7 @@ class BaseAgentState(MessagesState):
 
 
 class KnowledgeManageAgentState(BaseAgentState):
+    sources: Annotated[list[str], operator.add]
     documents: Annotated[list[Document], operator.add]
 
 
@@ -115,12 +116,12 @@ class KnowledgeManageAgent(BaseModel):
                 return 'web_tool'
             elif tool_call['name'] == self.select_tool.name:
                 return 'rag_select'
-        else:
-            return '__end__'
+
+        return '__end__'
 
     def rag_select_node(
         self, state: KnowledgeManageAgentState
-    ) -> Command[Literal['search_router', 'rag_search']]:
+    ) -> Command[Literal['search_router', 'rag_paper_search', 'rag_content_search']]:
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
         tool_call_id = tool_call['id']
@@ -159,31 +160,62 @@ class KnowledgeManageAgent(BaseModel):
                 )
 
         messages.pop(-1)
-        return Command(
-            update={
-                'messages': [
-                    AIMessage(
-                        '',
-                        tool_calls=[
-                            ToolCall(
-                                name=self.rag_search_tool.name,
-                                args=select_result.model_dump(),
-                                id=tool_call_id,
-                            )
-                        ],
-                    )
-                ],
-                'price': token_usage.calculate_cost(self.router_llm),
-            },
-            goto='rag_search',
-        )
+        if select_result.paper_first:
+            return Command(
+                update={
+                    'messages': [
+                        AIMessage(
+                            '',
+                            tool_calls=[
+                                ToolCall(
+                                    name=self.rag_search_tool.name,
+                                    args=select_result.model_dump(),
+                                    id=tool_call_id,
+                                )
+                            ],
+                        )
+                    ],
+                    'price': token_usage.calculate_cost(self.router_llm),
+                },
+                goto='rag_paper_search',
+            )
+        else:
+            return Command(
+                update={
+                    'messages': [
+                        AIMessage(
+                            '',
+                            tool_calls=[
+                                ToolCall(
+                                    name=self.rag_search_tool.name,
+                                    args=select_result.model_dump(),
+                                    id=tool_call_id,
+                                )
+                            ],
+                        )
+                    ],
+                    'price': token_usage.calculate_cost(self.router_llm),
+                },
+                goto='rag_content_search',
+            )
 
     def rag_paper_search_node(self, state: KnowledgeManageAgentState):
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
-        tool_call_id = tool_call['id']
 
-        return {}
+        search_result = self.rag_search_tool.invoke(
+            {
+                'question': tool_call['args']['question'],
+                'table_name': tool_call['args']['table_name'],
+                'expr': 'type == "abstract"',
+            }
+        )
+        new_sources = []
+        for doc in search_result:
+            if doc.metadata['file_id'] not in state['sources']:
+                new_sources.append(doc.metadata['file_id'])
+
+        return {'sources': new_sources}
 
     def rag_content_search_node(
         self, state: KnowledgeManageAgentState
@@ -192,7 +224,23 @@ class KnowledgeManageAgent(BaseModel):
         tool_call: ToolCall = messages[-1].tool_calls[0]
         tool_call_id = tool_call['id']
 
-        search_result = self.rag_search_tool.invoke(tool_call['args'])
+        if tool_call['args']['paper_first']:
+            source_str = ','.join([f'"{source}"' for source in state['sources']])
+            search_result = self.rag_search_tool.invoke(
+                {
+                    'question': tool_call['args']['question'],
+                    'table_name': tool_call['args']['table_name'],
+                    'expr': f'file_id in [{source_str}]',
+                }
+            )
+        else:
+            search_result = self.rag_search_tool.invoke(
+                {
+                    'question': tool_call['args']['question'],
+                    'table_name': tool_call['args']['table_name'],
+                    'expr': '',
+                }
+            )
 
         if search_result:
             return Command(
@@ -242,21 +290,21 @@ class KnowledgeManageAgent(BaseModel):
         return {'documents': all_web_docs}
 
     def search_conclude_node(self, state: KnowledgeManageAgentState):
-        origin_question = state['messages'][-1].content
+        origin_question = state['messages'][-1].tool_calls[0]['args']['question']
         reranker = load_reranker()
         clean_output = reranker.compress_documents(state['documents'], origin_question)
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                SystemMessage(CONCLUDE_DOCUMENTS_SYSTEM_ZH),
-                ('human', CONCLUDE_DOCUMENTS_HUMAN_ZH),
-            ]
-        )
-        chain = prompt | self.task_llm
+        # prompt = ChatPromptTemplate.from_messages(
+        #     [
+        #         SystemMessage(CONCLUDE_DOCUMENTS_SYSTEM_ZH),
+        #         ('human', CONCLUDE_DOCUMENTS_HUMAN_ZH),
+        #     ]
+        # )
+        # chain = prompt | self.task_llm
         doc_str = format_docs(clean_output)
-        response = chain.invoke({'question': origin_question, 'doc_str': doc_str})
+        # response = chain.invoke({'question': origin_question, 'doc_str': doc_str})
 
-        title = response.content
+        title = origin_question
         body = f'# {title}\n\n<documents>{doc_str}<documents>'
 
         manuscript = ManuscriptTable(
@@ -269,22 +317,20 @@ class KnowledgeManageAgent(BaseModel):
         with Session(engine) as session:
             insert_manuscript(session, manuscript)
 
-        token_usage = UsageMetadata.create(response.usage_metadata)
         return {
             'messages': [
                 AIMessage(
                     content=f'我已经找到了相关的资料，并将相关资料保存到了文件《{title}》中。'
                 )
             ],
-            'price': token_usage.calculate_cost(self.router_llm),
         }
 
     def build(self) -> CompiledStateGraph:
         searcher = StateGraph(KnowledgeManageAgentState)
         searcher.add_node('search_router', self.search_router)
         searcher.add_node('rag_select', self.rag_select_node)
-        searcher.add_node('rag_content_search', self.rag_content_search_node)
         searcher.add_node('rag_paper_search', self.rag_paper_search_node)
+        searcher.add_node('rag_content_search', self.rag_content_search_node)
         searcher.add_node('web_tool', self.web_tool_node)
         searcher.add_node('search_conclude', self.search_conclude_node)
 
@@ -585,6 +631,8 @@ class MainAgent(BaseModel):
 
         if self.task_llm is None:
             self.task_llm = load_llm('gpt-4o-mini')
+
+        return self
 
     @staticmethod
     @tool

@@ -52,10 +52,11 @@ class SelectKnowledgeBase(BaseTool):
         with Session(engine) as session:
             kb_list = get_knowledge_bases(session, 0, 20)
 
+        logger.debug(kb_list)
         if self.available_knowledge_bases:
             available_kbs = '\n=================\n'.join([
                 f'name: {kb.table_name}\ndescription: {kb.description}'
-                for kb in kb_list if kb in self.available_knowledge_bases
+                for kb in kb_list if kb.uid in self.available_knowledge_bases
             ])
         else:
             available_kbs = '\n=================\n'.join([

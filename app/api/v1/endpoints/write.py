@@ -380,9 +380,14 @@ async def chat(
                             event=ChatEventType.STATUS, data='自行决策选择知识库'
                         ).to_sse()
                     elif event['name'] == 'search_from_vecstore':
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='搜索知识库'
-                        ).to_sse()
+                        if event['metadata']['langgraph_node'] == 'rag_paper_search':
+                            yield SSEMessage(
+                                event=ChatEventType.STATUS, data='搜索相关文献'
+                            ).to_sse()
+                        else:
+                            yield SSEMessage(
+                                event=ChatEventType.STATUS, data='搜索知识库'
+                            ).to_sse()
                     elif event['name'] == 'modifier':
                         yield SSEMessage(
                             event=ChatEventType.STATUS, data='分析修改策略'

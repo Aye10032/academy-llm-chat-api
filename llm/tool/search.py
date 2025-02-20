@@ -13,7 +13,7 @@ config = get_settings()
 
 
 class WebSearchInput(BaseModel):
-    query: str = Field(description='联网搜索的关键词')
+    question: str = Field(description='联网搜索的关键词')
 
 
 class WebSearchTool(BaseTool):
@@ -98,7 +98,7 @@ class WebSearchTool(BaseTool):
 
         raise ToolException('所给出的问题没有在互联网上找到相关信息。')
 
-    def _run(self, query: str) -> list[str]:
+    def _run(self, question: str) -> list[str]:
         """调用工具进行联网搜索"""
-        urls = self.search(query)
+        urls = self.search(question)
         return urls
