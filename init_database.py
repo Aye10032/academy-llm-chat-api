@@ -189,7 +189,7 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
 
             retriever.add_documents(docs)
     elif collection_ext == 'pdf':
-        pdf_list = glob.glob(f'{file_path.rstrip("/")}/*.pdf')  # pylint: disable=inconsistent-quotes
+        pdf_list = glob.glob(f'{file_path.rstrip("/")}/*.pdf')
         pdf_path = os.path.join(output_path, collection_name, 'pdf')
         md_path = os.path.join(output_path, collection_name, 'markdown')
         os.makedirs(pdf_path, exist_ok=True)
