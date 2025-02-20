@@ -44,7 +44,9 @@ class DOINotFoundError(Exception):
 
 
 @retry(delay=random.uniform(2.0, 5.0))
-def get_paper_info(pmid: str,  silent: bool = True) -> tuple[list[ArticleBlock], MarkdownMeta]:
+def get_paper_info(
+    pmid: str, silent: bool = True
+) -> tuple[list[ArticleBlock], MarkdownMeta]:
     """根据pubmed id获取文献信息
 
     Args:
@@ -60,30 +62,44 @@ def get_paper_info(pmid: str,  silent: bool = True) -> tuple[list[ArticleBlock],
 
     url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&retmode=xml'
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0'
     }
 
     if get_settings().server.network.USE_PROXY:
         proxies = {
             'http': get_settings().server.network.PROXY,
-            'https': get_settings().server.network.PROXY
+            'https': get_settings().server.network.PROXY,
         }
-        response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
+        response = requests.request(
+            'GET', url, headers=headers, proxies=proxies, timeout=10
+        )
     else:
         response = requests.request('GET', url, headers=headers, timeout=10)
 
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'xml')
 
-        title = soup.find('Article').find('ArticleTitle').text if soup.find('Article') else None
-        year = (soup.find('Article')
-                .find('JournalIssue')
-                .find('PubDate').find('Year').text)
+        title = (
+            soup.find('Article').find('ArticleTitle').text
+            if soup.find('Article')
+            else None
+        )
+        year = (
+            soup.find('Article').find('JournalIssue').find('PubDate').find('Year').text
+        )
 
         author = ''
         if author_block := soup.find('Author'):
-            last_name = author_block.find('LastName').text if author_block.find('LastName') else ''
-            initials = author_block.find('Initials').text if author_block.find('Initials') else ''
+            last_name = (
+                author_block.find('LastName').text
+                if author_block.find('LastName')
+                else ''
+            )
+            initials = (
+                author_block.find('Initials').text
+                if author_block.find('Initials')
+                else ''
+            )
             author = f'{last_name}, {initials}'
 
         abstract = soup.find('AbstractText').text if soup.find('AbstractText') else None
@@ -100,24 +116,31 @@ def get_paper_info(pmid: str,  silent: bool = True) -> tuple[list[ArticleBlock],
             author=author,
             year=int(year),
             source=[
-                FileSource(source_url=f'https://doi.org/{doi}', source_type=SourceType.WEB),
-                FileSource(source_url=f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/', source_type=SourceType.PUBMED),
-            ]
+                FileSource(
+                    source_url=f'https://doi.org/{doi}', source_type=SourceType.WEB
+                ),
+                FileSource(
+                    source_url=f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/',
+                    source_type=SourceType.PUBMED,
+                ),
+            ],
         )
 
         section_list = [
             ArticleBlock(text=title, text_level=1),
             ArticleBlock(text='Abstract', text_level=2),
-            ArticleBlock(text=abstract)
+            ArticleBlock(text=abstract),
         ]
         return section_list, paper_info
     else:
         # 请求失败时抛出异常
-        raise Exception('下载请求失败')
+        raise ResponseError('下载请求失败')
 
 
 @retry(delay=random.uniform(2.0, 5.0))
-def get_info_by_doi(doi: str, silent: bool = True) -> tuple[list[ArticleBlock], MarkdownMeta]:
+def get_info_by_doi(
+    doi: str, silent: bool = True
+) -> tuple[list[ArticleBlock], MarkdownMeta]:
     """通过DOI号补全文献信息
 
     Args:
@@ -133,28 +156,33 @@ def get_info_by_doi(doi: str, silent: bool = True) -> tuple[list[ArticleBlock], 
     url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={doi}[doi]&retmode=xml'
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0'
     }
 
     if get_settings().server.network.USE_PROXY:
         proxies = {
             'http': get_settings().server.network.PROXY,
-            'https': get_settings().server.network.PROXY
+            'https': get_settings().server.network.PROXY,
         }
-        response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
+        response = requests.request(
+            'GET', url, headers=headers, proxies=proxies, timeout=10
+        )
     else:
         response = requests.request('GET', url, headers=headers, timeout=10)
 
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'xml')
 
-        count: int = soup.find('Count').text if soup.find('Count') else 0
+        count = int(soup.find('Count').text) if soup.find('Count') else 0
 
         if count > 0:
             pmid = soup.find('IdList').find_all('Id')[0].text
             return get_paper_info(pmid)
+        else:
+            raise DOINotFoundError
+    else:
+        raise ResponseError
 
-    raise DOINotFoundError
 
 class GrobidConnector:
     """Grobid pdf解析服务封装"""
@@ -170,13 +198,13 @@ class GrobidConnector:
     def __enter__(self):
         self.session = requests.Session()
 
-        retries = Retry(total=5, backoff_factor=5, status_forcelist=[500, 502, 503, 504, 300])
+        retries = Retry(
+            total=5, backoff_factor=5, status_forcelist=[500, 502, 503, 504, 300]
+        )
         adapter = HTTPAdapter(max_retries=retries)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
-        self.session.headers.update({
-            'Accept': 'application/xml'
-        })
+        self.session.headers.update({'Accept': 'application/xml'})
 
         if get_settings().server.network.USE_PROXY:
             k, v = get_settings().server.network.PROXY.split('://')
@@ -198,19 +226,19 @@ class GrobidConnector:
             raise ConnectionError('Grobid server is unavailable.') from e
 
     def parse_file(
-            self,
-            pdf_file: str | bytes,
-            *,
-            consolidate_header: str = ConsolidateHeader.ALL_METADATA,
-            consolidate_citations: str = ConsolidateCitations.ALL_METADATA,
-            consolidate_funders: str = ConsolidateFunders.NO_CONSOLIDATION,
-            include_raw_citations: bool = True,
-            include_raw_affiliations: bool = False,
-            include_raw_copyrights: bool = False,
-            segment_sentences: bool = False,
-            generate_ids: bool = False,
-            start: int = -1,
-            end: int = -1
+        self,
+        pdf_file: str | bytes,
+        *,
+        consolidate_header: str = ConsolidateHeader.ALL_METADATA,
+        consolidate_citations: str = ConsolidateCitations.ALL_METADATA,
+        consolidate_funders: str = ConsolidateFunders.NO_CONSOLIDATION,
+        include_raw_citations: bool = True,
+        include_raw_affiliations: bool = False,
+        include_raw_copyrights: bool = False,
+        segment_sentences: bool = False,
+        generate_ids: bool = False,
+        start: int = -1,
+        end: int = -1,
     ) -> tuple[list[ArticleBlock], MarkdownMeta]:
         """使用grobid将PDF文件解析为XML格式返回
 
@@ -251,15 +279,17 @@ class GrobidConnector:
                 'includeRawAffiliations': '1' if include_raw_affiliations else '0',
                 'includeRawCopyrights': '1' if include_raw_copyrights else '0',
                 'segmentSentences': '1' if segment_sentences else '0',
-                'generateIDs': '1' if generate_ids else '0'
+                'generateIDs': '1' if generate_ids else '0',
             }
 
-            response = self.session.post(self.server_url, files=files, data=the_data, timeout=self.timeout)
+            response = self.session.post(
+                self.server_url, files=files, data=the_data, timeout=self.timeout
+            )
             if response.status_code != 200:
                 raise ResponseError('下载失败')
             else:
-                with open('temp/temp.xml', 'w', encoding='utf-8') as f:
-                    f.write(response.text)
+                with open('temp/temp.xml', 'w', encoding='utf-8') as xml_f:
+                    xml_f.write(response.text)
 
                 return self.__parse_xml(response.text)
 
@@ -276,7 +306,7 @@ class GrobidConnector:
 
         doi = soup.find('sourceDesc').find('idno', {'type': 'DOI'})
         if doi:
-            sections, file_meta = get_info_by_doi(doi)
+            sections, file_meta = get_info_by_doi(doi.text)
         else:
             raise DOINotFoundError
 
@@ -313,11 +343,12 @@ class PdfLoader(BaseFileLoader):
     Examples:
         若使用Grobid，则先定义解析器，之后将之传入加载器：
         ```python
-
         gr_setting = get_settings().fileloader.grobid
 
         with GrobidConnector(gr_setting) as connector:
-            loader = PdfLoader(keep_title=True, add_toc=True, solver='grobid', connector=connector)
+            loader = PdfLoader(
+                keep_title=True, add_toc=True, solver='grobid', connector=connector
+            )
 
             pdf_list = glob.glob('test/*.pdf')
             for file in tqdm(pdf_list, total=len(pdf_list)):
@@ -325,11 +356,12 @@ class PdfLoader(BaseFileLoader):
                 loader.save_md(f'test/md/{Path(file).name.replace(".pdf", ".md")}')
         ```
     """
+
     solver: Literal['grobid', 'doc2x']
     connector: Any
 
     def load(
-            self, origin_file_path: FilePath, **kwargs
+        self, origin_file_path: FilePath, **kwargs
     ) -> tuple[MarkdownMeta, list[Document]]:
         assert self.connector
 
@@ -338,7 +370,9 @@ class PdfLoader(BaseFileLoader):
         elif self.solver == 'doc2x':
             raise NotImplementedError
 
-        self.file_meta.source.append(FileSource(source_url=origin_file_path, source_type=SourceType.PDF))
+        self.file_meta.source.append(
+            FileSource(source_url=origin_file_path, source_type=SourceType.PDF)
+        )
         doc_list = self._article_to_doc(**kwargs)
 
         return self.file_meta, doc_list

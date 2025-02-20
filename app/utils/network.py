@@ -9,6 +9,7 @@ import requests
 from loguru import logger
 from pydantic import AnyHttpUrl
 from requests import HTTPError
+from urllib3.exceptions import ResponseError
 
 
 def retry(retries: int = 3, delay: float = 1) -> Callable:
@@ -33,10 +34,12 @@ def retry(retries: int = 3, delay: float = 1) -> Callable:
             for i in range(1, retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
+                except (ResponseError, ConnectionError) as e:
                     if i == retries:
                         logger.error(f'Error: {repr(e)}.')
-                        logger.error(f'"{func.__name__}()" failed after {retries} retries.')
+                        logger.error(
+                            f'"{func.__name__}()" failed after {retries} retries.'
+                        )
                         break
                     else:
                         logger.debug(f'Error: {repr(e)} -> Retrying...')
@@ -70,16 +73,16 @@ BASE64_IMG_PATTERN = r'<img[^>]+src="data:image/[^;]+;base64,[^"]+"[^>]*>'
 SVG_PATTERN = r'(<svg[^>]*>)(.*?)(<\/svg>)'
 
 
-def _replace_svg(html: str, new_content: str = "this is a placeholder") -> str:
+def _replace_svg(html: str, new_content: str = 'this is a placeholder') -> str:
     return re.sub(
         SVG_PATTERN,
-        lambda match: f"{match.group(1)}{new_content}{match.group(3)}",
+        lambda match: f'{match.group(1)}{new_content}{match.group(3)}',
         html,
         flags=re.DOTALL,
     )
 
 
-def _replace_base64_images(html: str, new_image_src: str = "#") -> str:
+def _replace_base64_images(html: str, new_image_src: str = '#') -> str:
     return re.sub(BASE64_IMG_PATTERN, f'<img src="{new_image_src}"/>', html)
 
 

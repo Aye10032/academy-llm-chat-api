@@ -3,6 +3,7 @@ import glob
 import os.path
 import shutil
 import sys
+import time
 from argparse import Namespace
 from datetime import datetime
 from pathlib import Path
@@ -207,6 +208,7 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
             for file in tqdm(pdf_list, total=len(pdf_list)):
                 pdf_file = os.path.join(pdf_path, Path(file).name)
                 if Path(pdf_file).exists():
+                    time.sleep(0.5)
                     continue
 
                 shutil.copyfile(file, pdf_file)
