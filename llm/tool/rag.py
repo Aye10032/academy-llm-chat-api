@@ -52,7 +52,6 @@ class SelectKnowledgeBase(BaseTool):
         with Session(engine) as session:
             kb_list = get_knowledge_bases(session, 0, 20)
 
-        logger.debug(kb_list)
         if self.available_knowledge_bases:
             available_kbs = '\n=================\n'.join([
                 f'name: {kb.table_name}\ndescription: {kb.description}'

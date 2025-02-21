@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime
 from enum import Enum
+from operator import itemgetter
 from typing import Annotated, Union
 from uuid import uuid4
 import os
@@ -16,17 +17,20 @@ from starlette.responses import StreamingResponse
 import app.crud.user as user_crud
 import app.crud.chat_session as chat_crud
 import app.crud.write_project as project_crud
+import app.crud.chat_record as record_crud
+import app.crud.project_source as source_crud
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
 from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
 from app.crud.user import update_user
 from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
+from app.models.write_project import ChatRecordTable, ProjectSourcesTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
 from app.schemas.manuscript import ManuscriptPublic, Manuscript
 from app.schemas.user import UserUpdate
 from app.schemas.write_project import WriteProject, WriteProjectUpdate
-from llm.core.agent import MainAgent
+from llm.core.agent import MainAgent, MainAgentState
 from llm.core.chain import conclude_chat
 from llm.core.model import load_llm
 from llm.tool.modify import OptimizerOutput, RewriterOutput
@@ -255,10 +259,11 @@ async def chat(
     available_kbs: str = Form('[]'),
 ):
     available_kbs = json.loads(available_kbs)
-    
+
     logger.debug(available_kbs)
     logger.debug(f'project: {project_uid} session:{chat_uid}')
     logger.info(f'{current_user.username}: {message}')
+    user_email = current_user.email
 
     chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
 
@@ -319,6 +324,7 @@ async def chat(
             app = MainAgent(
                 use_web=use_web, task_llm=llm, available_knowledge_bases=available_kbs
             ).build()
+            old_source = source_crud.get(session, project_uid)
             full_response = ''
             await asyncio.sleep(0.1)
 
@@ -327,6 +333,7 @@ async def chat(
                     'messages': cut_messages,
                     'current_text': current_text,
                     'project_uid': project_uid,
+                    'sources': old_source if old_source else [],
                 },
                 {'configurable': {'thread_id': '1'}, 'recursion_limit': 25},
                 version='v2',
@@ -360,6 +367,30 @@ async def chat(
                         yield SSEMessage(
                             event=ChatEventType.STATUS, data='chat_end'
                         ).to_sse()
+                    elif (
+                        event['name'] == 'LangGraph'
+                        and len(event['metadata'].keys()) == 1
+                    ):
+                        now_time = datetime.now()
+                        final_output: MainAgentState = event['data']['output']
+
+                        # 保存本次调用记录
+                        chat_record = ChatRecordTable(
+                            project_uid=project_uid,
+                            user_email=str(user_email),
+                            price=final_output['price'],
+                            create_time=now_time,
+                        )
+                        record_crud.insert(session, chat_record)
+
+                        # 更新引用源
+                        new_sources = ProjectSourcesTable(
+                            project_uid=project_uid,
+                        )
+                        new_sources.set_sources(
+                            list(map(itemgetter(1), final_output['sources']))
+                        )
+                        source_crud.insert_or_update(session, new_sources)
 
                 elif event['event'] == 'on_tool_end':
                     if event['name'] == 'modifier':

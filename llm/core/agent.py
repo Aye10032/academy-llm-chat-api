@@ -1,4 +1,5 @@
 import operator
+from operator import itemgetter
 
 from typing import Annotated, Literal, Optional, TypeVar, TypedDict
 from uuid import uuid4
@@ -253,7 +254,8 @@ class KnowledgeManageAgent(BaseModel):
         tool_call_id = tool_call['id']
 
         if tool_call['args']['paper_first']:
-            source_str = ','.join([f'"{source}"' for source in state['sources']])
+            file_ids = list(map(itemgetter(0), state['sources']))
+            source_str = ','.join([f'"{source}"' for source in file_ids])
             search_result = self.rag_search_tool.invoke(
                 {
                     'question': tool_call['args']['question'],
