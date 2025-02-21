@@ -10,7 +10,7 @@ from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
     PydanticBaseSettingsSource,
-    TomlConfigSettingsSource
+    TomlConfigSettingsSource,
 )
 
 
@@ -27,6 +27,7 @@ class ServerSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
     DATABASE_URL: str
+    GRAPH_STORE_URL: str
     LOGGING_LEVEL: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR']
     INIT_USER: str
     INIT_PASSWORD: str
@@ -149,8 +150,7 @@ class ToolSetting(BaseModel):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        toml_file='config.toml',
-        alias_generator=lambda field_name: field_name.lower()
+        toml_file='config.toml', alias_generator=lambda field_name: field_name.lower()
     )
 
     PROJECT_NAME: str = 'Academic LLM Chat API'
@@ -168,12 +168,12 @@ class Settings(BaseSettings):
 
     @classmethod
     def settings_customise_sources(
-            cls,
-            settings_cls: Type[BaseSettings],
-            init_settings: PydanticBaseSettingsSource,
-            env_settings: PydanticBaseSettingsSource,
-            dotenv_settings: PydanticBaseSettingsSource,
-            file_secret_settings: PydanticBaseSettingsSource,
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (TomlConfigSettingsSource(settings_cls),)
 

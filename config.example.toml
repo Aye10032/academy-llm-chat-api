@@ -1,5 +1,6 @@
 [server]
 database_url = "sqlite:///./data/app.db"
+graph_store_url = "sqlite:///./data/graph.db"
 logging_level = "INFO"
 init_user = "admin@example.com"
 init_password = "password"

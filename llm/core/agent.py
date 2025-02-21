@@ -1,6 +1,6 @@
 import operator
 
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, TypeVar, TypedDict
 from uuid import uuid4
 
 from langchain_core.messages import (
@@ -8,8 +8,6 @@ from langchain_core.messages import (
     ToolMessage,
     ToolCall,
     AIMessage,
-    AnyMessage,
-    HumanMessage,
     trim_messages,
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -17,10 +15,11 @@ from langchain_core.documents import Document
 from langchain_core.runnables.graph import MermaidDrawMethod, CurveStyle
 from langchain_core.tools import BaseTool, tool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import START
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
-from langgraph.graph import StateGraph, END, MessagesState, add_messages
+from langgraph.graph import StateGraph, END, MessagesState
 from pydantic import BaseModel, model_validator, Field
 from sqlmodel import Session
 from tqdm import tqdm
@@ -31,22 +30,53 @@ from app.models import ManuscriptTable
 from app.schemas.manuscript import Manuscript
 from llm.core.model import load_reranker, load_llm
 from llm.core.template import (
-    CONCLUDE_DOCUMENTS_SYSTEM_ZH,
     OPTIMIZER_SYSTEM_ZH,
-    CONCLUDE_DOCUMENTS_HUMAN_ZH,
     AGENT_SYSTEM_ZH,
     GENERATOR_ROUTE_SYSTEM_ZH,
     GENERATOR_SYSTEM_ZH,
     GENERATOR_HUMAN_ZH,
     KNOWLEDGE_MANAGE_SYSTEM_ZH,
 )
-from llm.file_loader.web import JinaWebLoader
+from llm.file_loader.web import SimpleWebLoader
 from llm.rag.retriever import format_docs
-from llm.schemas import MarkdownMeta
 from llm.schemas.tokens import UsageMetadata
 from llm.tool.modify import Modifier, OptimizerOutput, Rewriter, RewriterOutput
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
 from llm.tool.search import WebSearchTool
+
+T = TypeVar('T')
+
+
+def deduplicate_list(lst: list[tuple[str, T]]) -> list[tuple[str, T]]:
+    """
+    去除列表中重复的元素，以 tuple 的第一个元素（str）为去重依据，保留最早出现的。
+
+    Args:
+        lst: 输入列表，元素为 tuple[str, T]，T 可能是不可哈希类型
+
+    Returns:
+        去重后的新列表，保留原始顺序中首次出现的元素
+    """
+    seen = set()
+    return [t for t in lst if not (t[0] in seen or seen.add(t[0]))]
+
+
+def merge_lists_unique(
+    list_a: list[tuple[str, T]], list_b: list[tuple[str, T]]
+) -> list[tuple[str, T]]:
+    """
+    将 list_b 中不重复的元素添加进 list_a，以 tuple 的第一个元素（str）为去重依据，
+    保留 list_a 中元素优先。
+
+    Args:
+        list_a: 原始列表，元素为 tuple[str, T]
+        list_b: 要合并的列表，元素为 tuple[str, T]
+
+    Returns:
+        合并后的新列表，保留 list_a 的元素，添加 list_b 中未出现的元素
+    """
+    seen = {t[0] for t in list_a}
+    return list_a + [t for t in list_b if t[0] not in seen]
 
 
 class BaseAgentState(MessagesState):
@@ -55,7 +85,7 @@ class BaseAgentState(MessagesState):
 
 
 class KnowledgeManageAgentState(BaseAgentState):
-    sources: Annotated[list[str], operator.add]
+    sources: Annotated[list[tuple[str, Document]], merge_lists_unique]
     documents: Annotated[list[Document], operator.add]
 
 
@@ -210,12 +240,10 @@ class KnowledgeManageAgent(BaseModel):
                 'expr': 'type == "abstract"',
             }
         )
-        new_sources = []
-        for doc in search_result:
-            if doc.metadata['file_id'] not in state['sources']:
-                new_sources.append(doc.metadata['file_id'])
+        new_sources = [(doc.metadata['file_id'], doc) for doc in search_result]
+        sources = deduplicate_list(new_sources)
 
-        return {'sources': new_sources}
+        return {'sources': sources}
 
     def rag_content_search_node(
         self, state: KnowledgeManageAgentState
@@ -233,6 +261,14 @@ class KnowledgeManageAgent(BaseModel):
                     'expr': f'file_id in [{source_str}]',
                 }
             )
+
+            if search_result:
+                return Command(
+                    update={
+                        'documents': search_result,
+                    },
+                    goto='search_conclude',
+                )
         else:
             search_result = self.rag_search_tool.invoke(
                 {
@@ -242,13 +278,14 @@ class KnowledgeManageAgent(BaseModel):
                 }
             )
 
-        if search_result:
-            return Command(
-                update={
-                    'documents': search_result,
-                },
-                goto='search_conclude',
-            )
+            if search_result:
+                new_sources = [(doc.metadata['file_id'], doc) for doc in search_result]
+                sources = deduplicate_list(new_sources)
+
+                return Command(
+                    update={'documents': search_result, 'sources': sources},
+                    goto='search_conclude',
+                )
 
         if self.use_web:
             return Command(
@@ -283,29 +320,24 @@ class KnowledgeManageAgent(BaseModel):
 
         all_web_docs = []
         for url in tqdm(search_urls, total=len(search_urls)):
-            web_loader = JinaWebLoader()
+            web_loader = SimpleWebLoader()
             _, docs = web_loader.load(url)
             all_web_docs.extend(docs)
 
-        return {'documents': all_web_docs}
+        new_sources = [(doc.metadata['file_id'], doc) for doc in all_web_docs]
+        sources = deduplicate_list(new_sources)
+
+        return {'documents': all_web_docs, 'sources': sources}
 
     def search_conclude_node(self, state: KnowledgeManageAgentState):
         origin_question = state['messages'][-1].tool_calls[0]['args']['question']
         reranker = load_reranker()
         clean_output = reranker.compress_documents(state['documents'], origin_question)
 
-        # prompt = ChatPromptTemplate.from_messages(
-        #     [
-        #         SystemMessage(CONCLUDE_DOCUMENTS_SYSTEM_ZH),
-        #         ('human', CONCLUDE_DOCUMENTS_HUMAN_ZH),
-        #     ]
-        # )
-        # chain = prompt | self.task_llm
         doc_str = format_docs(clean_output)
-        # response = chain.invoke({'question': origin_question, 'doc_str': doc_str})
 
         title = origin_question
-        body = f'# {title}\n\n<documents>{doc_str}<documents>'
+        body = f'# {title}\n\n<documents>\n{doc_str}\n</documents>'
 
         manuscript = ManuscriptTable(
             uid=str(uuid4()),
@@ -613,8 +645,12 @@ class GenerateAgent(BaseModel):
 
 class MainAgentState(BaseAgentState):
     current_text: str
-    chat_history: Annotated[list[AnyMessage], add_messages]
-    sources: Annotated[list[dict[str, Document]], operator.add]
+    sources: Annotated[list[tuple[str, Document]], merge_lists_unique]
+
+
+class MainAgentOutput(TypedDict):
+    sources: list[tuple[str, Document]]
+    price: float
 
 
 class MainAgent(BaseModel):
@@ -668,13 +704,6 @@ class MainAgent(BaseModel):
                 MessagesPlaceholder(variable_name='history'),
             ]
         )
-
-        # 所有对话以 chat_history 传入
-        if not state['messages']:
-            user_question = state['chat_history'][-1]
-            assert isinstance(HumanMessage, user_question)
-
-            state['messages'] = [user_question]
 
         chain = prompt | llm_with_tool
         response = chain.invoke({'history': state['messages']})
@@ -756,20 +785,14 @@ class MainAgent(BaseModel):
             include_system=False,
         )
         output: KnowledgeManageAgentState = subgraph.invoke(
-            {'messages': message, 'project_uid': state['project_uid']}
+            {'messages': message, 'project_uid': state['project_uid'], 'sources': []},
         )
-
-        new_sources = []
-        for doc in output['documents']:
-            meta_date = MarkdownMeta.model_validate(doc.metadata)
-            if str(meta_date.source) not in state['sources']:
-                new_sources.append({str(meta_date.source): doc})
 
         return {
             'messages': [
                 ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)
             ],
-            'sources': new_sources,
+            'sources': output['sources'],
             'price': output['price'],
         }
 
@@ -803,8 +826,8 @@ class MainAgent(BaseModel):
             'price': response['price'],
         }
 
-    def build(self) -> CompiledStateGraph:
-        graph = StateGraph(MainAgentState)
+    def build(self, memory: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:
+        graph = StateGraph(MainAgentState, output=MainAgentOutput)
         graph.add_node('main_router', self.main_route_node)
         graph.add_node('text_generator', self.text_generator_agent)
         graph.add_node('text_optimizer', self.text_optimizer_agent)
@@ -816,7 +839,10 @@ class MainAgent(BaseModel):
         graph.add_edge('knowledge_searcher', 'main_router')
         graph.add_edge('text_generator', 'main_router')
 
-        return graph.compile()
+        if memory:
+            return graph.compile(checkpointer=memory)
+        else:
+            return graph.compile()
 
     def visualize(self, file_path: str) -> None:
         graph = StateGraph(MainAgentState)
