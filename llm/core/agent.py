@@ -41,7 +41,7 @@ from llm.core.template import (
 from llm.file_loader.web import SimpleWebLoader
 from llm.rag.retriever import format_docs
 from llm.schemas.tokens import UsageMetadata
-from llm.tool.modify import Modifier, OptimizerOutput, Rewriter, RewriterOutput
+from llm.tool.modify import Modifier, OptimizerOutput, Rewriter
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
 from llm.tool.search import WebSearchTool
 
@@ -436,21 +436,21 @@ class OptimizerAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        response = self.rewriter.invoke(
+        response: AIMessage = self.rewriter.invoke(
             {'query': tool_call['args']['query'], 'current_text': state['current_text']}
         )
-        modify_result: RewriterOutput = response['parsed']
-        token_usage = UsageMetadata.create(response['raw'].usage_metadata)
+        modify_result = response.content
+        token_usage = UsageMetadata.create(response.usage_metadata)
 
         return Command(
             update={
                 'messages': [
                     ToolMessage(
-                        f'我已经完成了重写：{modify_result.explanation}',
+                        '我已经完成了重写任务',
                         tool_call_id=tool_call_id,
                     )
                 ],
-                'current_text': modify_result.rewrite,
+                'current_text': modify_result,
                 'price': token_usage.calculate_cost(self.router_llm),
             },
             goto='optimizer_router',

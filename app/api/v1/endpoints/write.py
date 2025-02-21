@@ -9,6 +9,7 @@ import os
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
 from langchain_community.chat_message_histories import SQLChatMessageHistory
+from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, trim_messages
 from loguru import logger
 from pydantic import BaseModel
@@ -33,7 +34,7 @@ from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent, MainAgentState
 from llm.core.chain import conclude_chat
 from llm.core.model import load_llm
-from llm.tool.modify import OptimizerOutput, RewriterOutput
+from llm.tool.modify import OptimizerOutput
 
 router = APIRouter()
 
@@ -183,6 +184,20 @@ async def read_manuscript(
     return get_manuscript(session, uid)
 
 
+@router.get(
+    '/projects/{project_uid}/sources',
+    response_model=list[Document],
+    description='获取指定项目的索引列表',
+)
+async def get_project_sources(
+    session: SessionDep,
+    project_uid: str,
+    current_user: Annotated[UserTable, Depends(get_current_active_user)],
+):
+    project_sources = source_crud.get_list(session, project_uid)
+    return [source[1] for source in project_sources]
+
+
 @router.post('/projects/{project_uid}/chats', description='新建对话')
 async def insert_chat(
     session: SessionDep,
@@ -324,7 +339,7 @@ async def chat(
             app = MainAgent(
                 use_web=use_web, task_llm=llm, available_knowledge_bases=available_kbs
             ).build()
-            old_source_data = source_crud.get(session, project_uid)
+            old_source_data = source_crud.get_list(session, project_uid)
             if old_source_data:
                 old_source = [
                     (doc.metadata['file_id'], doc)
@@ -358,10 +373,9 @@ async def chat(
                                 event=ChatEventType.ANSWER,
                                 data=data['chunk'].content,
                             ).to_sse()
-                    elif (
-                        event['metadata']['langgraph_node']
-                        and event['metadata']['langgraph_node'] == 'generator'
-                    ):
+                    elif event['metadata']['langgraph_node'] and event['metadata'][
+                        'langgraph_node'
+                    ] in ['generator', 'rewriter']:
                         data = event['data']
                         if data['chunk'].content:
                             yield SSEMessage(
@@ -405,12 +419,6 @@ async def chat(
                         yield SSEMessage(
                             event=ChatEventType.MODIFY, data=modify.model_dump()
                         ).to_sse()
-                    elif event['name'] == 'rewriter':
-                        output: RewriterOutput = event['data']['output']['parsed']
-                        yield SSEMessage(
-                            event=ChatEventType.WRITE,
-                            data=f'\n\n---\n\n{output.rewrite}',
-                        ).to_sse()
 
                 elif event['event'] == 'on_tool_start':
                     if event['name'] == 'select_vecstore':
@@ -429,6 +437,14 @@ async def chat(
                     elif event['name'] == 'modifier':
                         yield SSEMessage(
                             event=ChatEventType.STATUS, data='分析修改策略'
+                        ).to_sse()
+                    elif event['name'] == 'rewriter':
+                        yield SSEMessage(
+                            event=ChatEventType.WRITE,
+                            data='\n\n---\n\n',
+                        ).to_sse()
+                        yield SSEMessage(
+                            event=ChatEventType.STATUS, data='修改文本'
                         ).to_sse()
                     else:
                         yield SSEMessage(
