@@ -1,3 +1,5 @@
+from typing import Optional
+
 from sqlmodel import Session, select
 
 from app.models.write_project import ProjectSourcesTable
@@ -13,7 +15,7 @@ def insert_or_update(session: Session, project_source: ProjectSourcesTable):
 
     if existing:
         # 如果记录存在，更新 sources
-        existing.sources = project_source.sources  # 现在 sources 已经是 JSON 字符串
+        existing.sources = project_source.sources
         session.add(existing)
     else:
         # 如果记录不存在，创建新记录
@@ -21,11 +23,9 @@ def insert_or_update(session: Session, project_source: ProjectSourcesTable):
 
     # 提交事务
     session.commit()
-    session.refresh(project_source)
-    return project_source
 
 
-def get(session: Session, project_uid):
+def get(session: Session, project_uid) -> Optional[ProjectSourcesTable]:
     statement = select(ProjectSourcesTable).where(
         ProjectSourcesTable.project_uid == project_uid
     )

@@ -697,9 +697,16 @@ class MainAgent(BaseModel):
         """
         return
 
+    @staticmethod
+    @tool
+    def end():
+        """如果你认为此次工作已经处理完毕，调用这个工具。
+        这个工具不会响应任何事件，调用它仅仅为了声明任务结束，你在调用它的同时请再正常输出中对此次工作进行总结"""
+        return
+
     def main_route_node(self, state: MainAgentState):
-        tools = [self.generate_task, self.optimize_task, self.search_task]
-        llm_with_tool = self.router_llm.bind_tools(tools)
+        tools = [self.generate_task, self.optimize_task, self.search_task, self.end]
+        llm_with_tool = self.router_llm.bind_tools(tools, tool_choice='required')
         prompt = ChatPromptTemplate.from_messages(
             [
                 SystemMessage(content=AGENT_SYSTEM_ZH),
@@ -732,6 +739,8 @@ class MainAgent(BaseModel):
 
             if tool_call['name'] == self.search_task.name:
                 return 'knowledge_searcher'
+
+            return '__end__'
 
         return '__end__'
 

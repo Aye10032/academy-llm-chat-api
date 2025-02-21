@@ -324,7 +324,14 @@ async def chat(
             app = MainAgent(
                 use_web=use_web, task_llm=llm, available_knowledge_bases=available_kbs
             ).build()
-            old_source = source_crud.get(session, project_uid)
+            old_source_data = source_crud.get(session, project_uid)
+            if old_source_data:
+                old_source = [
+                    (doc.metadata['file_id'], doc)
+                    for doc in old_source_data.get_sources()
+                ]
+            else:
+                old_source = []
             full_response = ''
             await asyncio.sleep(0.1)
 
@@ -333,7 +340,7 @@ async def chat(
                     'messages': cut_messages,
                     'current_text': current_text,
                     'project_uid': project_uid,
-                    'sources': old_source if old_source else [],
+                    'sources': old_source,
                 },
                 {'configurable': {'thread_id': '1'}, 'recursion_limit': 25},
                 version='v2',
