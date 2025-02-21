@@ -692,7 +692,7 @@ def _load_deepseek_v3(temperature: float = 0.4) -> ChatOpenAI:
 
 def _load_deepseek_r1(temperature: float = 0.4) -> ChatOpenAI:
     llm = ChatOpenAI(
-        model='deepseek-reasoner',
+        model='aihubmix-DeepSeek-R1',
         base_url=llm_cfg.deepseek.BASE_URL,
         api_key=llm_cfg.deepseek.API_KEY,
         temperature=temperature,
@@ -708,7 +708,7 @@ def load_llm(
     match model_name:
         case 'gpt-4o':
             return _load_gpt4o(temperature)
-        case 'gpt-03-mini':
+        case 'gpt-o3-mini':
             return _load_gpto3_mini(temperature)
         case 'deepseek-v3':
             return _load_deepseek_v3(temperature)
