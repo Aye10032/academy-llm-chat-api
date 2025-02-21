@@ -8,7 +8,8 @@ from typing import Any
 import requests
 from loguru import logger
 from pydantic import AnyHttpUrl
-from requests import HTTPError
+from requests import HTTPError, ReadTimeout
+from requests.exceptions import ChunkedEncodingError
 from urllib3.exceptions import ResponseError
 
 
@@ -34,7 +35,13 @@ def retry(retries: int = 3, delay: float = 1) -> Callable:
             for i in range(1, retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except (ResponseError, ConnectionError, ConnectionError) as e:
+                except (
+                    ResponseError,
+                    ReadTimeout,
+                    ChunkedEncodingError,
+                    ConnectionError,
+                    ConnectionError,
+                ) as e:
                     if i == retries:
                         logger.error(f'Error: {repr(e)}.')
                         logger.error(
