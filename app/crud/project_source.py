@@ -25,7 +25,7 @@ def insert_or_update(session: Session, project_source: ProjectSourcesTable):
     session.commit()
 
 
-def get(session: Session, project_uid) -> Optional[ProjectSourcesTable]:
+def get_list(session: Session, project_uid) -> Optional[ProjectSourcesTable]:
     statement = select(ProjectSourcesTable).where(
         ProjectSourcesTable.project_uid == project_uid
     )
