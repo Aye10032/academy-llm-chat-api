@@ -80,6 +80,15 @@ async def add_new_project(
         update_time=now_time,
     )
 
+    manuscript = ManuscriptTable(
+        uid=str(uuid4()),
+        project_uid=new_project.uid,
+        title='01-未命名文件',
+    )
+
+    manuscript = insert_manuscript(session, manuscript)
+    new_project.last_manuscript = manuscript.uid
+
     new_project = project_crud.insert(session, new_project)
     return new_project
 
