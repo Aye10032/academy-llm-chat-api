@@ -195,7 +195,7 @@ async def get_project_sources(
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     project_sources = source_crud.get_list(session, project_uid)
-    return [source[1] for source in project_sources]
+    return project_sources.get_sources()
 
 
 @router.post('/projects/{project_uid}/chats', description='新建对话')

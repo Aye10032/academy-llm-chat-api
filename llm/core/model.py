@@ -681,7 +681,7 @@ def _load_glm4_air(temperature: float = 0.4) -> ChatOpenAI:
 
 def _load_deepseek_v3(temperature: float = 0.4) -> ChatOpenAI:
     llm = ChatOpenAI(
-        model='deepseek-ai/DeepSeek-V3',
+        model='deepseek-v3-241226',
         base_url=llm_cfg.deepseek.BASE_URL,
         api_key=llm_cfg.deepseek.API_KEY,
         temperature=temperature,
@@ -692,7 +692,7 @@ def _load_deepseek_v3(temperature: float = 0.4) -> ChatOpenAI:
 
 def _load_deepseek_r1(temperature: float = 0.4) -> ChatOpenAI:
     llm = ChatOpenAI(
-        model='aihubmix-DeepSeek-R1',
+        model='deepseek-r1-250120',
         base_url=llm_cfg.deepseek.BASE_URL,
         api_key=llm_cfg.deepseek.API_KEY,
         temperature=temperature,
