@@ -1,6 +1,7 @@
 from typing import Any, Optional, Type
 
 from langchain_core.messages import SystemMessage, BaseMessage
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -90,13 +91,18 @@ class Modifier(BaseTool):
 
     def _run(
         self, query: str, current_text: str, config: Optional[RunnableConfig] = None
-    ) -> Any:
-        llm = self.llm.with_structured_output(
-            OptimizerOutput, include_raw=True, method='function_calling'
-        )
+    ) -> OptimizerOutput:
         prompt = ChatPromptTemplate.from_messages(
-            [SystemMessage(content=MODIFY_SYSTEM_ZH), ('human', OPTIMIZER_HUMAN_ZH)]
+            [('system', MODIFY_SYSTEM_ZH), ('human', OPTIMIZER_HUMAN_ZH)]
         )
-        chain = prompt | llm
+        parser = PydanticOutputParser(pydantic_object=OptimizerOutput)
+        chain = prompt | self.llm | parser
 
-        return chain.invoke({'origin_text': current_text, 'question': query}, config)
+        return chain.invoke(
+            {
+                'origin_text': current_text,
+                'question': query,
+                'structure': parser.get_format_instructions(),
+            },
+            config,
+        )

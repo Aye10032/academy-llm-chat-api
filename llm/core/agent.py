@@ -463,21 +463,21 @@ class OptimizerAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        response = self.modifier.invoke(
+        response: OptimizerOutput = self.modifier.invoke(
             {'query': tool_call['args']['query'], 'current_text': state['current_text']}
         )
-        modify_result: OptimizerOutput = response['parsed']
-        token_usage = UsageMetadata.create(response['raw'].usage_metadata)
+        # token_usage = UsageMetadata.create(response['raw'].usage_metadata)
+        # TODO 处理修改后的token用量统计
 
         return Command(
             update={
                 'messages': [
                     ToolMessage(
-                        f'我已经完成了修改：{str(modify_result.model_dump())}',
+                        f'我已经完成了修改：{str(response.model_dump())}',
                         tool_call_id=tool_call_id,
                     )
                 ],
-                'price': token_usage.calculate_cost(self.router_llm),
+                # 'price': token_usage.calculate_cost(self.router_llm),
             },
             goto='optimizer_router',
         )
@@ -884,5 +884,5 @@ class MainAgent(BaseModel):
             output_file_path=file_path,
             draw_method=MermaidDrawMethod.PYPPETEER,
             curve_style=CurveStyle.BASIS,
-            background_color='#00000000'
+            background_color='#00000000',
         )
