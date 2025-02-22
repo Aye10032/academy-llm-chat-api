@@ -705,8 +705,8 @@ class MainAgent(BaseModel):
         return
 
     def main_route_node(self, state: MainAgentState):
-        tools = [self.generate_task, self.optimize_task, self.search_task, self.end]
-        llm_with_tool = self.router_llm.bind_tools(tools, tool_choice='required')
+        tools = [self.generate_task, self.optimize_task, self.search_task]
+        llm_with_tool = self.router_llm.bind_tools(tools)
         prompt = ChatPromptTemplate.from_messages(
             [
                 SystemMessage(content=AGENT_SYSTEM_ZH),
@@ -884,4 +884,5 @@ class MainAgent(BaseModel):
             output_file_path=file_path,
             draw_method=MermaidDrawMethod.PYPPETEER,
             curve_style=CurveStyle.BASIS,
+            background_color='#00000000'
         )
