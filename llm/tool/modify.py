@@ -1,4 +1,4 @@
-from typing import Any, Optional, Type
+from typing import Optional, Type
 
 from langchain_core.messages import SystemMessage, BaseMessage
 from langchain_core.output_parsers import PydanticOutputParser

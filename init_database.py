@@ -13,16 +13,10 @@ from loguru import logger
 from tqdm import tqdm
 from urllib3.exceptions import ResponseError
 
+import app.crud.knowledge_base as kb_crud
+import app.crud.user as user_crud
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.crud.knowledge_base import (
-    insert_knowledge_base,
-    KBExistError,
-    update_knowledge_base,
-    get_knowledge_base_by_name,
-    delete_by_name,
-)
-from app.crud.user import insert_user, UserExistError
 from app.db.session import get_simple_session, create_db_and_tables
 from app.models import UserTable, KnowledgeBaseTable
 from app.schemas.knowledge_base import KnowledgeBaseUpdate
@@ -34,7 +28,6 @@ from llm.file_loader.loader import FileLoadError
 from llm.file_loader.pdf import PdfLoader, GrobidConnector, DOINotFoundError
 from llm.rag.retriever import insert_chain
 from llm.rag.storage import create_vector_db, get_doc_db, fix_null_fields, get_vector_db
-from llm.schemas.markdown import SourceType, FileSource
 
 logger.remove()
 handler_id = logger.add(sys.stderr, level='DEBUG')
@@ -53,11 +46,11 @@ def init_user(email: str, password: str):
     session = get_simple_session()
     logger.info('从配置文件创建默认管理员账户...')
     try:
-        insert_user(session, test_user)
+        user_crud.insert(session, test_user)
         logger.info(
             '创建完毕。请注意，当存在手动注册的其他管理员账户后，此账号将被禁用。'
         )
-    except UserExistError:
+    except user_crud.UserExistError:
         logger.error('此邮箱已存在')
     finally:
         session.close()
@@ -97,15 +90,15 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
 
     # 创建知识库相关数据表
     collection_name = _get_collection_name()
-    if get_knowledge_base_by_name(session, collection_name) and not drop_old:
+    if kb_crud.get_by_name(session, collection_name) and not drop_old:
         abs_key = _get_collection_abstract_keyword()
         collection_lang = _get_collection_lang()
         collection_ext = _get_collection_ext()
-        uid = get_knowledge_base_by_name(session, collection_name).uid
+        uid = kb_crud.get_by_name(session, collection_name).uid
 
         now_time = datetime.now()
         knowledge_base = KnowledgeBaseUpdate(last_update=now_time)
-        update_knowledge_base(session, uid, knowledge_base)
+        kb_crud.update(session, uid, knowledge_base)
 
         # 初始化向量数据库
         embedding_model = load_embedding()
@@ -135,11 +128,11 @@ def init_knowledge_base(file_path: str, output_path: str, drop_old: bool):
 
         logger.info('创建知识库记录...')
         if drop_old:
-            delete_by_name(session, collection_name)
+            kb_crud.delete_by_name(session, collection_name)
 
         try:
-            insert_knowledge_base(session, knowledge_base)
-        except KBExistError:
+            kb_crud.insert(session, knowledge_base)
+        except kb_crud.KBExistError:
             logger.error('已经存在同名的知识库')
             exit(0)
         finally:

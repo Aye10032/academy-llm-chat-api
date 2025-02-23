@@ -25,7 +25,7 @@ from pydantic import BaseModel, model_validator, Field
 from sqlmodel import Session
 from tqdm import tqdm
 
-from app.crud.manuscript import insert_manuscript, get_drafts
+import app.crud.manuscript as manu_crud
 from app.db.session import engine
 from app.models import ManuscriptTable
 from app.schemas.manuscript import Manuscript
@@ -349,7 +349,7 @@ class KnowledgeManageAgent(BaseModel):
             is_draft=True,
         )
         with Session(engine) as session:
-            insert_manuscript(session, manuscript)
+            manu_crud.insert(session, manuscript)
 
         return {
             'messages': [
@@ -574,7 +574,7 @@ class GenerateAgent(BaseModel):
         tool_call_id = tool_call['id']
 
         with Session(engine) as session:
-            drafts = get_drafts(session, state['project_uid'])
+            drafts = manu_crud.get_drafts(session, state['project_uid'])
 
         reranker = load_reranker()
         clean_drafts = reranker.compress_manuscripts(drafts, state['write_request'])

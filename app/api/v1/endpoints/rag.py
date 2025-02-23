@@ -13,9 +13,9 @@ from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
 import app.crud.chat_session as chat_crud
+import app.crud.knowledge_base as kb_crud
+import app.crud.user as user_crud
 from app.core.security import get_current_active_user
-from app.crud.knowledge_base import get_knowledge_bases, get_knowledge_base
-from app.crud.user import update_user
 from app.db.session import SessionDep, engine
 from app.models import UserTable, ChatSessionTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
@@ -55,7 +55,7 @@ async def read_knowledge_bases(
     offset: int = 0,
     limit: Annotated[int, Query(le=20)] = 20,
 ):
-    return get_knowledge_bases(session, offset, limit)
+    return kb_crud.get_list(session, offset, limit)
 
 
 @router.post(
@@ -145,7 +145,7 @@ async def chat(
     context_length: int = Form(...),
 ):
     chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
-    knowledge_base = get_knowledge_base(session, knowledge_base_uid)
+    knowledge_base = kb_crud.get(session, knowledge_base_uid)
     table_name = knowledge_base.table_name
 
     logger.debug(f'knowledge_base: {table_name} session:{chat_uid}')
@@ -220,7 +220,7 @@ async def chat(
         asyncio.create_task(generate_summary())
 
     # 更新用户信息
-    update_user(
+    user_crud.update(
         session,
         str(current_user.email),
         UserUpdate(last_knowledge_base=knowledge_base_uid),

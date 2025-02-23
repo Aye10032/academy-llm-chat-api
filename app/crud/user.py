@@ -13,12 +13,7 @@ class UserExistError(ValueError):
     pass
 
 
-def get_user(session: Session, email: str) -> Optional[UserTable]:
-    statement = select(UserTable).where(UserTable.email == email)
-    return session.exec(statement).first()
-
-
-def insert_user(session: Session, user: UserTable) -> None:
+def insert(session: Session, user: UserTable) -> None:
     try:
         logger.debug(f'新增用户请求 ({UserPublic.model_validate(user)})')
         session.add(user)
@@ -30,8 +25,8 @@ def insert_user(session: Session, user: UserTable) -> None:
             raise e
 
 
-def update_user(session: Session, email: str, user: UserUpdate) -> UserTable:
-    db_user = get_user(session, email)
+def update(session: Session, email: str, user: UserUpdate) -> UserTable:
+    db_user = get(session, email)
     if not db_user:
         raise HTTPException(status_code=404, detail='用户不存在！')
 
@@ -41,3 +36,8 @@ def update_user(session: Session, email: str, user: UserUpdate) -> UserTable:
     session.commit()
     session.refresh(db_user)
     return db_user
+
+
+def get(session: Session, email: str) -> Optional[UserTable]:
+    statement = select(UserTable).where(UserTable.email == email)
+    return session.exec(statement).first()

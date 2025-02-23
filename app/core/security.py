@@ -9,8 +9,8 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
 from passlib.context import CryptContext
 
+import app.crud.user as user_crud
 from app.core.config import get_settings
-from app.crud.user import get_user
 from app.db.session import SessionDep
 from app.models.user import UserTable
 from app.schemas.auth import TokenData
@@ -37,7 +37,7 @@ def get_password_hash(password) -> str:
 
 
 def authenticate_user(session: SessionDep, email: str, password: str) -> bool | UserTable:
-    user = get_user(session, email)
+    user = user_crud.get(session, email)
     if not user:
         return False
     if not verify_password(password, user.hashed_password):
@@ -73,7 +73,7 @@ async def get_current_user(
         token_data = TokenData(email=email)
     except InvalidTokenError as e:
         raise credentials_exception from e
-    user = get_user(session, email=token_data.email)
+    user = user_crud.get(session, email=token_data.email)
     if user is None:
         raise credentials_exception
     return user

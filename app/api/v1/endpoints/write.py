@@ -15,15 +15,14 @@ from loguru import logger
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
-import app.crud.user as user_crud
-import app.crud.chat_session as chat_crud
-import app.crud.write_project as project_crud
 import app.crud.chat_record as record_crud
+import app.crud.chat_session as chat_crud
+import app.crud.manuscript as manu_crud
 import app.crud.project_source as source_crud
+import app.crud.user as user_crud
+import app.crud.write_project as project_crud
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
-from app.crud.manuscript import insert_manuscript, get_manuscripts_list, get_manuscript
-from app.crud.user import update_user
 from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
 from app.models.write_project import ChatRecordTable, ProjectSourcesTable
@@ -86,7 +85,7 @@ async def add_new_project(
         title='01-未命名文件',
     )
 
-    manuscript = insert_manuscript(session, manuscript)
+    manuscript = manu_crud.insert(session, manuscript)
     new_project.last_manuscript = manuscript.uid
 
     new_project = project_crud.insert(session, new_project)
@@ -132,7 +131,7 @@ async def add_new_manuscript(
         title=title,
     )
 
-    manuscript = insert_manuscript(session, manuscript)
+    manuscript = manu_crud.insert(session, manuscript)
     return manuscript.uid
 
 
@@ -145,7 +144,7 @@ async def save_manuscript(
     content: str = Form(...),
 ) -> str:
     now_time = datetime.now()
-    last_manuscript = get_manuscript(session, uid)
+    last_manuscript = manu_crud.get_manuscript(session, uid)
 
     if last_manuscript.content == content:
         return uid
@@ -158,7 +157,7 @@ async def save_manuscript(
         version=last_manuscript.version + 1,
         is_draft=last_manuscript.is_draft,
     )
-    new_manuscript = insert_manuscript(session, new_manuscript)
+    new_manuscript = manu_crud.insert(session, new_manuscript)
 
     project = WriteProjectUpdate(last_manuscript=uid, update_time=now_time)
     project_crud.update(session, new_manuscript.project_uid, project)
@@ -176,7 +175,7 @@ async def get_manuscripts(
     project_uid: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    return get_manuscripts_list(session, project_uid)
+    return manu_crud.get_list(session, project_uid)
 
 
 @router.get(
@@ -190,7 +189,7 @@ async def read_manuscript(
     uid: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    return get_manuscript(session, uid)
+    return manu_crud.get_manuscript(session, uid)
 
 
 @router.get(
@@ -512,5 +511,7 @@ async def chat(
         asyncio.create_task(generate_summary())
 
     # 更新用户信息
-    update_user(session, str(current_user.email), UserUpdate(last_project=project_uid))
+    user_crud.update(
+        session, str(current_user.email), UserUpdate(last_project=project_uid)
+    )
     return StreamingResponse(event_generator(), media_type='text/event-stream')
