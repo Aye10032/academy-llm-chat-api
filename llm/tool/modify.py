@@ -22,7 +22,7 @@ class RewriterInput(BaseModel):
 
 class Rewriter(BaseTool):
     name: str = 'rewriter'
-    description: str = '我负责对文本进行整体性重构，包括但不限于结构调整、段落重组、逻辑重塑、内容扩展/压缩等全局性优化'
+    description: str = '我负责对文本进行整体性重构，包括但不限于结构调整、段落重组、逻辑重塑、内容扩展/压缩、文本翻译等全局性改动'
     args_schema: Type[BaseModel] = RewriterInput
     return_direct: bool = False
     handle_tool_error: bool = True
