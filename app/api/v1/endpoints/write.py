@@ -424,7 +424,7 @@ async def chat(
 
                 elif event['event'] == 'on_tool_end':
                     if event['name'] == 'modifier':
-                        modify: OptimizerOutput = event['data']['output']['parsed']
+                        modify: OptimizerOutput = event['data']['output']
                         yield SSEMessage(
                             event=ChatEventType.MODIFY, data=modify.model_dump()
                         ).to_sse()
