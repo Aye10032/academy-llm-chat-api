@@ -89,7 +89,7 @@ async def get_chats(
     knowledge_base_uid: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    return chat_crud.get_list(session, knowledge_base_uid)
+    return chat_crud.get_list(session, knowledge_base_uid, str(current_user.email))
 
 
 @router.delete(

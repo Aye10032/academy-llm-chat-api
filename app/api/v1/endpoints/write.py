@@ -250,7 +250,7 @@ async def get_chats(
     project_uid: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    return chat_crud.get_list(session, project_uid)
+    return chat_crud.get_list(session, project_uid, str(current_user.email))
 
 
 @router.get(
