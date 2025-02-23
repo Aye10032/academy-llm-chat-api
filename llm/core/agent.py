@@ -28,7 +28,7 @@ from tqdm import tqdm
 import app.crud.manuscript as manu_crud
 from app.db.session import engine
 from app.models import ManuscriptTable
-from app.schemas.manuscript import Manuscript
+from app.schemas.manuscript import Manuscript, ManuscriptType
 from llm.core.model import load_reranker, load_llm
 from llm.core.template import (
     OPTIMIZER_SYSTEM_ZH,
@@ -346,7 +346,7 @@ class KnowledgeManageAgent(BaseModel):
             project_uid=state['project_uid'],
             title=title,
             content=body,
-            is_draft=True,
+            file_type=ManuscriptType.DRAFT,
         )
         with Session(engine) as session:
             manu_crud.insert(session, manuscript)

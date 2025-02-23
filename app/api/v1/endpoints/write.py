@@ -27,7 +27,7 @@ from app.db.session import SessionDep, engine
 from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
 from app.models.write_project import ChatRecordTable, ProjectSourcesTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
-from app.schemas.manuscript import ManuscriptPublic, Manuscript
+from app.schemas.manuscript import ManuscriptPublic, Manuscript, ManuscriptType
 from app.schemas.user import UserUpdate
 from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent, MainAgentState
@@ -83,6 +83,7 @@ async def add_new_project(
         uid=str(uuid4()),
         project_uid=new_project.uid,
         title='01-未命名文件',
+        file_type=ManuscriptType.CONTEXT,
     )
 
     manuscript = manu_crud.insert(session, manuscript)
@@ -101,7 +102,7 @@ async def delete_project(
     project_crud.delete(session, project_uid)
 
     if current_user.last_project == project_uid:
-        user_crud.update_user(session, current_user.email, UserUpdate(last_project=''))
+        user_crud.update(session, str(current_user.email), UserUpdate(last_project=''))
 
     # TODO 视情况是否要删除其他东西
 
@@ -115,7 +116,7 @@ async def read_projects(
     offset: int = 0,
     limit: Annotated[int, Query(le=20)] = 20,
 ):
-    return project_crud.get_list(session, current_user.email)
+    return project_crud.get_list(session, str(current_user.email))
 
 
 @router.post('/projects/{project_uid}/manuscripts', description='新建草稿')
@@ -155,7 +156,7 @@ async def save_manuscript(
         title=last_manuscript.title,
         content=content,
         version=last_manuscript.version + 1,
-        is_draft=last_manuscript.is_draft,
+        file_type=last_manuscript.file_type
     )
     new_manuscript = manu_crud.insert(session, new_manuscript)
 
@@ -203,7 +204,7 @@ async def get_project_sources(
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     project_sources = source_crud.get_list(session, project_uid)
-    return project_sources.get_sources()
+    return project_sources.get_sources() if project_sources else []
 
 
 @router.post('/projects/{project_uid}/chats', description='新建对话')

@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models import ManuscriptTable
-from app.schemas.manuscript import ManuscriptUpdate
+from app.schemas.manuscript import ManuscriptUpdate, ManuscriptType
 
 
 def insert(session: Session, manuscript: ManuscriptTable) -> ManuscriptTable:
@@ -59,7 +59,7 @@ def get_drafts(session: Session, project_uid: str):
     statement = (
         select(ManuscriptTable)
         .where(ManuscriptTable.project_uid == project_uid)
-        .where(ManuscriptTable.is_draft == True)
+        .where(ManuscriptTable.file_type == ManuscriptType.DRAFT)
     )
     return session.exec(statement).all()
 

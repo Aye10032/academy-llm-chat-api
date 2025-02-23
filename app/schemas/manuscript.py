@@ -1,6 +1,13 @@
+from enum import IntEnum
 from typing import Optional
 
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Field
+
+
+class ManuscriptType(IntEnum):
+    CONTEXT = 0
+    DRAFT = 1
+    LOCAL_FILE = 2
 
 
 class Manuscript(SQLModel):
@@ -9,16 +16,18 @@ class Manuscript(SQLModel):
     title: str
     content: str = ''
     version: int = 0
-    is_draft: bool = False
+    file_type: ManuscriptType = Field(default=ManuscriptType.CONTEXT)
+
 
 class ManuscriptPublic(SQLModel):
     uid: str
     project_uid: str
     title: str
     version: int
-    is_draft: bool = False
+    file_type: ManuscriptType = Field(default=ManuscriptType.CONTEXT)
+
 
 class ManuscriptUpdate(SQLModel):
     title: Optional[str] = None
     content: Optional[str] = None
-    version:Optional[int] = None
+    version: Optional[int] = None
