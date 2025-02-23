@@ -421,6 +421,9 @@ class OptimizerAgent(BaseModel):
 
         if message.tool_calls:
             tool_call = message.tool_calls[0]
+            # 仅保留一个调用
+            state['messages'].pop(-1)
+            state['messages'].append(AIMessage(content='', tool_calls=[tool_call]))
 
             if tool_call['name'] == self.modifier.name:
                 return 'modifier'
