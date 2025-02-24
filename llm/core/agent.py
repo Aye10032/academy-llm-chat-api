@@ -43,7 +43,7 @@ from llm.rag.retriever import format_docs
 from llm.schemas.tokens import UsageMetadata
 from llm.tool.modify import Modifier, OptimizerOutput, Rewriter
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
-from llm.tool.search import WebSearchTool
+from llm.tool.search import WebSearchTool, WebSearchResult
 
 T = TypeVar('T')
 
@@ -318,12 +318,14 @@ class KnowledgeManageAgent(BaseModel):
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
 
-        search_urls = self.web_search_tool.invoke(tool_call['args'])
+        search_results: list[WebSearchResult] = self.web_search_tool.invoke(
+            tool_call['args']
+        )
 
         all_web_docs = []
-        for url in tqdm(search_urls, total=len(search_urls)):
+        for result in tqdm(search_results, total=len(search_results)):
             web_loader = SimpleWebLoader()
-            _, docs = web_loader.load(url)
+            _, docs = web_loader.load(result.source, title=result.title)
             all_web_docs.extend(docs)
 
         new_sources = [(doc.metadata['file_id'], doc) for doc in all_web_docs]

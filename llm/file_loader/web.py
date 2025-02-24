@@ -50,9 +50,9 @@ class SimpleWebLoader(BaseFileLoader):
         assert len(docs_transform) == 1
 
         now_time = datetime.datetime.now()
-        title = docs_transform[0].metadata['title']
+
         self.file_meta = MarkdownMeta(
-            title=kwargs.get('title', title),
+            title=kwargs.get('title', '无标题网页'),
             author='',
             year=kwargs.get('year', now_time.year),
             source=[
