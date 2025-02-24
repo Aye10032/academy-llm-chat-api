@@ -15,6 +15,24 @@ def insert(session: Session, manuscript: ManuscriptTable) -> ManuscriptTable:
     return manuscript
 
 
+def delete(session: Session, uid: str):
+    statement = select(ManuscriptTable).where(ManuscriptTable.uid == uid)
+    results = session.exec(statement)
+    manuscript = results.one()
+    session.delete(manuscript)
+    session.commit()
+
+
+def delete_by_parent(session: Session, project_uid: str):
+    statement = select(ManuscriptTable).where(
+        ManuscriptTable.project_uid == project_uid
+    )
+    results = session.exec(statement)
+    manuscripts = results.all()
+    session.delete(manuscripts)
+    session.commit()
+
+
 def update(session: Session, uid: str, manuscript: ManuscriptUpdate) -> ManuscriptTable:
     db_manuscript = get_manuscript(session, uid)
     if not db_manuscript:

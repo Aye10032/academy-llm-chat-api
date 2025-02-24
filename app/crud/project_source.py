@@ -24,6 +24,22 @@ def insert_or_update(session: Session, project_source: ProjectSourcesTable):
     # 提交事务
     session.commit()
 
+def delete(session: Session, uid: str):
+    statement = select(ProjectSourcesTable).where(ProjectSourcesTable.uid == uid)
+    results = session.exec(statement)
+    project_source = results.one()
+    session.delete(project_source)
+    session.commit()
+
+
+def delete_by_parent(session: Session, project_uid: str):
+    statement = select(ProjectSourcesTable).where(
+        ProjectSourcesTable.project_uid == project_uid
+    )
+    results = session.exec(statement)
+    project_source = results.all()
+    session.delete(project_source)
+    session.commit()
 
 def get_list(session: Session, project_uid) -> Optional[ProjectSourcesTable]:
     statement = select(ProjectSourcesTable).where(

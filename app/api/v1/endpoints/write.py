@@ -105,6 +105,16 @@ async def delete_project(
         user_crud.update(session, str(current_user.email), UserUpdate(last_project=''))
 
     # TODO 视情况是否要删除其他东西
+    chat_sessions = chat_crud.get_list(session, project_uid, str(current_user.email))
+    for chat_session in chat_sessions:
+        chat_message_history = SQLChatMessageHistory(
+            session_id=chat_session.uid, connection=engine
+        )
+        chat_message_history.clear()
+        chat_crud.delete(session, chat_session.uid)
+
+    manu_crud.delete_by_parent(session, project_uid)
+    source_crud.delete_by_parent(session, project_uid)
 
 
 @router.get(
@@ -156,7 +166,7 @@ async def save_manuscript(
         title=last_manuscript.title,
         content=content,
         version=last_manuscript.version + 1,
-        file_type=last_manuscript.file_type
+        file_type=last_manuscript.file_type,
     )
     new_manuscript = manu_crud.insert(session, new_manuscript)
 
