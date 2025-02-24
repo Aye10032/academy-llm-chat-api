@@ -143,6 +143,11 @@ class KnowledgeManageAgent(BaseModel):
 
         if tool_calls:
             tool_call = tool_calls[0]
+
+            # 仅保留一个调用
+            state['messages'].pop(-1)
+            state['messages'].append(AIMessage(content='', tool_calls=[tool_call]))
+
             if tool_call['name'] == self.web_search_tool.name:
                 return 'web_tool'
             elif tool_call['name'] == self.select_tool.name:
@@ -500,7 +505,6 @@ class OptimizerAgent(BaseModel):
 
 
 class GenerateAgentState(BaseAgentState):
-    write_request: str
     current_text: str
     information_list: Annotated[list[Manuscript], operator.add]
 
@@ -511,22 +515,27 @@ class GenerateAgent(BaseModel):
 
     @staticmethod
     @tool
-    def analyzer():
+    def analyzer(user_request: str):
         """本地知识检索工具
         对于需要比较复杂知识的写作任务，可以先调用此工具。他会浏览本地的知识库并分析是否已经有查找好的可用于本次写作任务的资料。
+
+        Args:
+            user_request: 根据对话上下文总结的用户此次的写作需求
         """
         return
 
     @staticmethod
     @tool
-    def generator():
+    def generator(user_request: str):
         """文本生成工具
-        此工具能够根据用户的需要生成符合要求的文本"""
+        此工具能够根据用户的需要生成符合要求的文本
+
+        Args:
+            user_request: 根据对话上下文总结的用户此次的写作需求
+        """
         return
 
     def generator_route_node(self, state: GenerateAgentState):
-        last_message = state['messages'][-1].content
-
         tools = [self.analyzer]
         llm_with_tool = self.router_llm.bind_tools(tools)
         prompt = ChatPromptTemplate.from_messages(
@@ -541,18 +550,10 @@ class GenerateAgent(BaseModel):
 
         token_usage = UsageMetadata.create(response.usage_metadata)
 
-        if 'write_request' not in state:
-            return {
-                'write_request': last_message,
-                'current_text': '',
-                'messages': [response],
-                'price': token_usage.calculate_cost(self.router_llm),
-            }
-        else:
-            return {
-                'messages': [response],
-                'price': token_usage.calculate_cost(self.router_llm),
-            }
+        return {
+            'messages': [response],
+            'price': token_usage.calculate_cost(self.router_llm),
+        }
 
     def generator_route(
         self, state: GenerateAgentState
@@ -562,12 +563,17 @@ class GenerateAgent(BaseModel):
 
         if tool_calls:
             tool_call = tool_calls[0]
+
+            # 仅保留一个调用
+            state['messages'].pop(-1)
+            state['messages'].append(AIMessage(content='', tool_calls=[tool_call]))
+
             if tool_call['name'] == self.analyzer.name:
                 return 'analyzer'
             elif tool_call['name'] == self.generator.name:
                 return 'generator'
-        else:
-            return '__end__'
+
+        return '__end__'
 
     def analyzer_node(
         self, state: GenerateAgentState
@@ -579,7 +585,7 @@ class GenerateAgent(BaseModel):
             drafts = manu_crud.get_drafts(session, state['project_uid'])
 
         reranker = load_reranker()
-        clean_drafts = reranker.compress_manuscripts(drafts, state['write_request'])
+        clean_drafts = reranker.compress_manuscripts(drafts, tool_call['args']['user_request'])
 
         if clean_drafts:
             state['messages'].pop(-1)
@@ -590,7 +596,7 @@ class GenerateAgent(BaseModel):
                             '',
                             tool_calls=[
                                 ToolCall(
-                                    name=self.generator.name, args={}, id=tool_call_id
+                                    name=self.generator.name, args=tool_call['args'], id=tool_call_id
                                 )
                             ],
                         )
@@ -623,7 +629,7 @@ class GenerateAgent(BaseModel):
         chain = prompt | self.task_llm
         response = chain.invoke(
             {
-                'question': state['write_request'],
+                'question': tool_call['args']['user_request'],
                 'information': '\n\n'.join(
                     [draft.content for draft in state['information_list']]
                 ),
@@ -730,6 +736,10 @@ class MainAgent(BaseModel):
         if message.tool_calls:
             tool_call = message.tool_calls[0]
 
+            # 仅保留一个调用
+            state['messages'].pop(-1)
+            state['messages'].append(AIMessage(content='', tool_calls=[tool_call]))
+
             if tool_call['name'] == self.generate_task.name:
                 return 'text_generator'
 
@@ -763,7 +773,11 @@ class MainAgent(BaseModel):
         )
 
         output: GenerateAgentState = subgraph.invoke(
-            {'messages': message, 'project_uid': state['project_uid']}
+            {
+                'current_text': '',
+                'messages': message,
+                'project_uid': state['project_uid'],
+            }
         )
         return {
             'messages': [
