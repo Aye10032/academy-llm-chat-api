@@ -331,177 +331,177 @@ async def chat(
                 ) from e
 
     async def event_generator():
-        # try:
-        if uploaded_files:
-            yield SSEMessage(event=ChatEventType.STATUS, data='文件已收到...').to_sse()
+        try:
+            if uploaded_files:
+                yield SSEMessage(event=ChatEventType.STATUS, data='文件已收到...').to_sse()
 
-        if not message:
-            yield SSEMessage(
-                event=ChatEventType.ANSWER, data='文件已收到，请给出你的需求'
-            ).to_sse()
-        else:
-            yield SSEMessage(event=ChatEventType.STATUS, data='唤醒智能体').to_sse()
-            await asyncio.sleep(0.1)
-
-            cut_messages = trim_messages(
-                chat_message_history.messages,
-                strategy='last',
-                token_counter=len,
-                max_tokens=context_length,
-                start_on='human',
-                end_on=('ai', 'tool'),
-                include_system=False,
-            )
-            cut_messages.append(HumanMessage(content=message))
-
-            llm = load_llm(model, temperature)
-            app = MainAgent(
-                use_web=use_web, task_llm=llm, available_knowledge_bases=available_kbs
-            ).build()
-            old_source_data = source_crud.get_list(session, project_uid)
-            if old_source_data:
-                old_source = [
-                    (doc.metadata['file_id'], doc)
-                    for doc in old_source_data.get_sources()
-                ]
+            if not message:
+                yield SSEMessage(
+                    event=ChatEventType.ANSWER, data='文件已收到，请给出你的需求'
+                ).to_sse()
             else:
-                old_source = []
-            full_response = ''
-            await asyncio.sleep(0.1)
+                yield SSEMessage(event=ChatEventType.STATUS, data='唤醒智能体').to_sse()
+                await asyncio.sleep(0.1)
 
-            async for event in app.astream_events(
-                {
-                    'messages': cut_messages,
-                    'current_text': current_text,
-                    'project_uid': project_uid,
-                    'sources': old_source,
-                },
-                {'configurable': {'thread_id': '1'}, 'recursion_limit': 25},
-                version='v2',
-                exclude_names=['_write', 'RunnableSequence', 'RunnableLambda'],
-            ):
-                if event['event'] == 'on_chat_model_stream':
-                    if (
-                        event['metadata']['langgraph_node']
-                        and event['metadata']['langgraph_node'] == 'main_router'
-                    ):
-                        data = event['data']
-                        if data['chunk'].content:
-                            full_response += data['chunk'].content
+                cut_messages = trim_messages(
+                    chat_message_history.messages,
+                    strategy='last',
+                    token_counter=len,
+                    max_tokens=context_length,
+                    start_on='human',
+                    end_on=('ai', 'tool'),
+                    include_system=False,
+                )
+                cut_messages.append(HumanMessage(content=message))
+
+                llm = load_llm(model, temperature)
+                app = MainAgent(
+                    use_web=use_web, task_llm=llm, available_knowledge_bases=available_kbs
+                ).build()
+                old_source_data = source_crud.get_list(session, project_uid)
+                if old_source_data:
+                    old_source = [
+                        (doc.metadata['file_id'], doc)
+                        for doc in old_source_data.get_sources()
+                    ]
+                else:
+                    old_source = []
+                full_response = ''
+                await asyncio.sleep(0.1)
+
+                async for event in app.astream_events(
+                    {
+                        'messages': cut_messages,
+                        'current_text': current_text,
+                        'project_uid': project_uid,
+                        'sources': old_source,
+                    },
+                    {'configurable': {'thread_id': '1'}, 'recursion_limit': 25},
+                    version='v2',
+                    exclude_names=['_write', 'RunnableSequence', 'RunnableLambda'],
+                ):
+                    if event['event'] == 'on_chat_model_stream':
+                        if (
+                            event['metadata']['langgraph_node']
+                            and event['metadata']['langgraph_node'] == 'main_router'
+                        ):
+                            data = event['data']
+                            if data['chunk'].content:
+                                full_response += data['chunk'].content
+                                yield SSEMessage(
+                                    event=ChatEventType.ANSWER,
+                                    data=data['chunk'].content,
+                                ).to_sse()
+                        elif event['metadata']['langgraph_node'] and event['metadata'][
+                            'langgraph_node'
+                        ] in ['generator', 'rewriter']:
+                            data = event['data']
+                            if data['chunk'].content:
+                                yield SSEMessage(
+                                    event=ChatEventType.WRITE,
+                                    data=data['chunk'].content,
+                                ).to_sse()
+
+                    elif event['event'] == 'on_chain_end':
+                        if event['name'] == 'main_route':
                             yield SSEMessage(
-                                event=ChatEventType.ANSWER,
-                                data=data['chunk'].content,
+                                event=ChatEventType.STATUS, data='chat_end'
                             ).to_sse()
-                    elif event['metadata']['langgraph_node'] and event['metadata'][
-                        'langgraph_node'
-                    ] in ['generator', 'rewriter']:
-                        data = event['data']
-                        if data['chunk'].content:
+                        elif (
+                            event['name'] == 'LangGraph'
+                            and len(event['metadata'].keys()) == 1
+                        ):
+                            now_time = datetime.now()
+                            final_output: MainAgentState = event['data']['output']
+
+                            # 保存本次调用记录
+                            chat_record = ChatRecordTable(
+                                project_uid=project_uid,
+                                user_email=str(user_email),
+                                price=final_output['price'],
+                                create_time=now_time,
+                            )
+                            record_crud.insert(session, chat_record)
+
+                            # 更新引用源
+                            new_sources = ProjectSourcesTable(
+                                project_uid=project_uid,
+                            )
+                            new_sources.set_sources(
+                                list(map(itemgetter(1), final_output['sources']))
+                            )
+                            source_crud.insert_or_update(session, new_sources)
+
+                    elif event['event'] == 'on_tool_end':
+                        if event['name'] == 'modifier':
+                            modify: OptimizerOutput = event['data']['output']
+                            yield SSEMessage(
+                                event=ChatEventType.MODIFY, data=modify.model_dump()
+                            ).to_sse()
+
+                    elif event['event'] == 'on_tool_start':
+                        if event['name'] == 'select_vecstore':
+                            yield SSEMessage(
+                                event=ChatEventType.STATUS, data='自行决策选择知识库'
+                            ).to_sse()
+                        elif event['name'] == 'search_from_vecstore':
+                            if event['metadata']['langgraph_node'] == 'rag_paper_search':
+                                yield SSEMessage(
+                                    event=ChatEventType.STATUS, data='搜索相关文献'
+                                ).to_sse()
+                            else:
+                                yield SSEMessage(
+                                    event=ChatEventType.STATUS, data='搜索知识库'
+                                ).to_sse()
+                        elif event['name'] == 'modifier':
+                            yield SSEMessage(
+                                event=ChatEventType.STATUS, data='分析修改策略'
+                            ).to_sse()
+                        elif event['name'] == 'rewriter':
                             yield SSEMessage(
                                 event=ChatEventType.WRITE,
-                                data=data['chunk'].content,
+                                data='\n\n---\n\n',
                             ).to_sse()
-
-                elif event['event'] == 'on_chain_end':
-                    if event['name'] == 'main_route':
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='chat_end'
-                        ).to_sse()
-                    elif (
-                        event['name'] == 'LangGraph'
-                        and len(event['metadata'].keys()) == 1
-                    ):
-                        now_time = datetime.now()
-                        final_output: MainAgentState = event['data']['output']
-
-                        # 保存本次调用记录
-                        chat_record = ChatRecordTable(
-                            project_uid=project_uid,
-                            user_email=str(user_email),
-                            price=final_output['price'],
-                            create_time=now_time,
-                        )
-                        record_crud.insert(session, chat_record)
-
-                        # 更新引用源
-                        new_sources = ProjectSourcesTable(
-                            project_uid=project_uid,
-                        )
-                        new_sources.set_sources(
-                            list(map(itemgetter(1), final_output['sources']))
-                        )
-                        source_crud.insert_or_update(session, new_sources)
-
-                elif event['event'] == 'on_tool_end':
-                    if event['name'] == 'modifier':
-                        modify: OptimizerOutput = event['data']['output']
-                        yield SSEMessage(
-                            event=ChatEventType.MODIFY, data=modify.model_dump()
-                        ).to_sse()
-
-                elif event['event'] == 'on_tool_start':
-                    if event['name'] == 'select_vecstore':
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='自行决策选择知识库'
-                        ).to_sse()
-                    elif event['name'] == 'search_from_vecstore':
-                        if event['metadata']['langgraph_node'] == 'rag_paper_search':
                             yield SSEMessage(
-                                event=ChatEventType.STATUS, data='搜索相关文献'
+                                event=ChatEventType.STATUS, data='修改文本'
                             ).to_sse()
                         else:
                             yield SSEMessage(
-                                event=ChatEventType.STATUS, data='搜索知识库'
+                                event=ChatEventType.STATUS, data=event['name']
                             ).to_sse()
-                    elif event['name'] == 'modifier':
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='分析修改策略'
-                        ).to_sse()
-                    elif event['name'] == 'rewriter':
-                        yield SSEMessage(
-                            event=ChatEventType.WRITE,
-                            data='\n\n---\n\n',
-                        ).to_sse()
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='修改文本'
-                        ).to_sse()
-                    else:
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data=event['name']
-                        ).to_sse()
 
-                elif event['event'] == 'on_chain_start':
-                    if event['name'] == 'search_conclude':
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='总结搜索结果'
-                        ).to_sse()
-                    elif event['name'] == 'analyzer':
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='整理写作资料'
-                        ).to_sse()
-                    elif event['name'] == 'generator':
-                        yield SSEMessage(
-                            event=ChatEventType.STATUS, data='文本创作'
-                        ).to_sse()
+                    elif event['event'] == 'on_chain_start':
+                        if event['name'] == 'search_conclude':
+                            yield SSEMessage(
+                                event=ChatEventType.STATUS, data='总结搜索结果'
+                            ).to_sse()
+                        elif event['name'] == 'analyzer':
+                            yield SSEMessage(
+                                event=ChatEventType.STATUS, data='整理写作资料'
+                            ).to_sse()
+                        elif event['name'] == 'generator':
+                            yield SSEMessage(
+                                event=ChatEventType.STATUS, data='文本创作'
+                            ).to_sse()
 
-            logger.info(f'{model}: {full_response}')
-            chat_message_history.add_user_message(message)
-            chat_message_history.add_ai_message(full_response)
+                logger.info(f'{model}: {full_response}')
+                chat_message_history.add_user_message(message)
+                chat_message_history.add_ai_message(full_response)
 
-    #     except Exception as e:
-    #         logger.error(f'Unexpected error in event generator: {str(e)}')
-    #         yield SSEMessage(event=ChatEventType.ERROR, data=str(e)).to_sse()
-    #
-    #     finally:
-    #         # 清理临时文件
-    #         for file_info in uploaded_files:
-    #             try:
-    #                 file_path = file_info['path']
-    #                 if os.path.exists(file_path):
-    #                     os.remove(file_path)
-    #                     logger.debug(f'Cleaned up temporary file: {file_path}')
-    #             except Exception as e:
-    #                 logger.error(f'Error cleaning up file {file_path}: {str(e)}')
+        except Exception as e:
+            logger.exception('chat error')
+            yield SSEMessage(event=ChatEventType.ERROR, data=str(e)).to_sse()
+
+        finally:
+            # 清理临时文件
+            for file_info in uploaded_files:
+                try:
+                    clean_path = file_info['path']
+                    if os.path.exists(clean_path):
+                        os.remove(clean_path)
+                        logger.debug(f'Cleaned up temporary file: {clean_path}')
+                except Exception as e:
+                    logger.error(f'Error cleaning up file: {str(e)}')
 
     async def generate_summary():
         conclude = conclude_chat(chat_message_history)
