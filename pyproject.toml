@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aioftp[socks]>=0.24.1",
     "bs4>=0.0.2",
     "duckduckgo-search>=7.4.2",
     "fastapi>=0.115.8",
@@ -29,8 +30,13 @@ dependencies = [
     "uvicorn>=0.34.0",
 ]
 
+[tool.ruff]
+# Allow lines to be as long as 120.
+line-length = 100
+
 [tool.ruff.format]
 # 使用单引号
 quote-style = "single"
 # 启用docstring代码片段格式化
 docstring-code-format = true
+skip-magic-trailing-comma = true
