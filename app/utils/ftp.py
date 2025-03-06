@@ -318,15 +318,16 @@ class HTTPDownloader:
             await self.session.close()
 
         if self.global_pbar:
+            self.global_pbar.clear()
             self.global_pbar.close()
-            self.global_pbar = None
+            print()
 
 
 async def download_http_files(
     base_url: str,
-    remote_path: str,
+    remote_path: str | os.PathLike,
     file_list: list[str],
-    local_dir: str,
+    local_dir: str| os.PathLike,
     max_concurrency: int = 5,
     retry_count: int = 3,
     timeout: int = 30,
@@ -356,10 +357,10 @@ async def download_http_files(
                 base_url, remote_path, local_dir, max_retries=retry_count
             )
             results.update(retry_results)
+
+        return results
     finally:
         await downloader.close()
-
-    return results
 
 
 if __name__ == '__main__':

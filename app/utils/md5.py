@@ -1,4 +1,5 @@
 import hashlib
+from os import PathLike
 from typing import Optional
 
 from loguru import logger
@@ -41,7 +42,7 @@ def read_md5_from_file(md5_file_path: str) -> Optional[str]:
         return None
 
 
-def verify_md5(file_path: str, md5_file_path: str) -> bool:
+def verify_md5(file_path: str | PathLike, md5_file_path: str | PathLike) -> bool:
     """校验文件 MD5
 
     Args:
@@ -70,11 +71,13 @@ def verify_md5(file_path: str, md5_file_path: str) -> bool:
         logger.error(f'  期望的 MD5: {expected_md5}')
         return False
 
+
 def main():
     file_path = 'downloaded/pubmed25n0001.xml.gz'
     md5_file_path = 'downloaded/pubmed25n0001.xml.gz.md5'
 
     verify_md5(file_path, md5_file_path)
+
 
 if __name__ == '__main__':
     main()
