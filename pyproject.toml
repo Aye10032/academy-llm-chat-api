@@ -23,6 +23,7 @@ dependencies = [
     "pyjwt>=2.10.1",
     "pyppeteer>=2.0.0",
     "python-multipart>=0.0.20",
+    "rich>=13.9.4",
     "sqlmodel>=0.0.22",
     "torch>=2.6.0",
     "transformers>=4.48.3",
@@ -38,7 +39,6 @@ line-length = 100
 quote-style = "single"
 # 启用docstring代码片段格式化
 docstring-code-format = true
-skip-magic-trailing-comma = true
 
 [tool.ruff.lint]
 # On top of the default `select` (`E4`, E7`, `E9`, and `F`), enable flake8-bugbear (`B`) and flake8-quotes (`Q`).

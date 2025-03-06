@@ -132,18 +132,26 @@ class HTTPDownloader:
         self.failed_files: set[str] = set()
         self.session = None
 
+        # 全局进度条
+        self.global_pbar = None
+        self.total_files = 0
+        self.completed_files = 0
+
     async def _ensure_session(self):
         """确保aiohttp会话已创建"""
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout))
 
-    async def download_file(self, url: str, local_path: str | os.PathLike) -> bool:
+    async def download_file(
+        self, url: str, local_path: str | os.PathLike, position: int = 0
+    ) -> bool:
         """
         异步下载单个文件
 
         Args:
             url: 文件URL
             local_path: 本地保存路径
+            position: 进度条位置，用于多文件下载时的进度条排列
 
         Returns:
             bool: 下载是否成功
@@ -158,6 +166,10 @@ class HTTPDownloader:
                 async with self.session.get(url, allow_redirects=True) as response:
                     if response.status != 200:
                         logger.error(f'下载文件失败: {url}, 状态码: {response.status}')
+                        # 更新全局进度条
+                        if self.global_pbar:
+                            self.completed_files += 1
+                            self.global_pbar.update(1)
                         return False
 
                     file_size = int(response.headers.get('Content-Length', 0))
@@ -174,6 +186,7 @@ class HTTPDownloader:
                             unit_scale=True,
                             unit_divisor=1024,
                             miniters=1,
+                            position=position,
                             leave=False,
                         ) as pbar:
                             async for chunk in response.content.iter_chunked(self.chunk_size):
@@ -183,12 +196,24 @@ class HTTPDownloader:
                                     pbar.update(len(chunk))
 
                 os.rename(temp_path, local_path)
+
+                # 更新全局进度条
+                if self.global_pbar:
+                    self.completed_files += 1
+                    self.global_pbar.update(1)
+
                 return True
 
             except Exception as e:
                 logger.error(f'下载文件异常 {url}: {str(e)}')
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
+
+                # 更新全局进度条
+                if self.global_pbar:
+                    self.completed_files += 1
+                    self.global_pbar.update(1)
+
                 return False
 
     async def download_files(
@@ -207,12 +232,24 @@ class HTTPDownloader:
         """
         logger.info(f'开始下载 {len(file_list)} 个文件，最大并发数: {self.max_concurrency}')
 
+        # 初始化全局进度条
+        self.total_files = len(file_list)
+        self.completed_files = 0
+
+        # 创建全局进度条，位置在所有文件进度条之后
+        position = min(self.max_concurrency, len(file_list))
+        self.global_pbar = tqdm(
+            desc='总进度', total=self.total_files, unit='个文件', position=position, leave=True
+        )
+
         tasks = []
-        for filename in file_list:
+        for i, filename in enumerate(file_list):
             url = f'{base_url.strip("/")}/{remote_path.strip("/")}/{filename}'
             local_path = Path(local_dir) / filename
 
-            task = asyncio.create_task(self.download_file(url, local_path))
+            position = i % self.max_concurrency
+
+            task = asyncio.create_task(self.download_file(url, local_path, position=position))
             tasks.append((filename, task))
 
         results = {}
@@ -226,6 +263,11 @@ class HTTPDownloader:
                 logger.error(f'下载文件 {filename} 时发生异常: {str(e)}')
                 results[filename] = False
                 self.failed_files.add(filename)
+
+        # 关闭全局进度条
+        if self.global_pbar:
+            self.global_pbar.close()
+            self.global_pbar = None
 
         success_count = sum(1 for success in results.values() if success)
         logger.info(f'下载完成: 成功 {success_count}/{len(file_list)} 个文件')
@@ -274,6 +316,10 @@ class HTTPDownloader:
         """关闭HTTP会话"""
         if self.session and not self.session.closed:
             await self.session.close()
+
+        if self.global_pbar:
+            self.global_pbar.close()
+            self.global_pbar = None
 
 
 async def download_http_files(
