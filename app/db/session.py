@@ -2,18 +2,26 @@ from typing import Annotated
 
 from fastapi import Depends
 from loguru import logger
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, MetaData
 from sqlmodel import SQLModel, Session
 
 from app.core.config import get_settings
 
-connect_args = {"check_same_thread": False}
+connect_args = {'check_same_thread': False}
 engine = create_engine(get_settings().server.DATABASE_URL, connect_args=connect_args)
 
 
 @logger.catch
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
+
+
+def drop_table(table_name: str):
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
+    table = metadata.tables[table_name]
+    if table is not None:
+        SQLModel.metadata.drop_all(engine, [table])
 
 
 def get_session():
