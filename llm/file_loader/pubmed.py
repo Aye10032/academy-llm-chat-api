@@ -1,11 +1,12 @@
 import gzip
 import xml.etree.ElementTree as ET
+from typing import Any
 
 from loguru import logger
 from pydantic import AnyHttpUrl, FilePath
 
 
-def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict:
+def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict[str, Any]]:
     """
     从PubMed XML文件中提取文章信息
 
@@ -24,6 +25,7 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict:
             event, root = next(context)
 
             article_count = 0
+            last_year = 0
 
             for event, element in context:
                 if event == 'end' and element.tag == 'PubmedArticle':
@@ -43,11 +45,10 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict:
                     pub_date = element.find('.//PubDate/Year')
                     if pub_date is not None:
                         article_data['year'] = int(pub_date.text)
-
-                    # 提取期刊名称
-                    journal = element.find('.//Journal/Title')
-                    if journal is not None:
-                        article_data['journal'] = journal.text
+                        last_year = article_data['year']
+                    else:
+                        # 可以认为论文的年限是挨着的
+                        article_data['year'] = last_year
 
                     # 提取第一作者
                     first_author = element.find('.//AuthorList/Author')
@@ -55,9 +56,14 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict:
                         last_name = first_author.find('LastName')
                         fore_name = first_author.find('ForeName')
                         if last_name is not None and fore_name is not None:
-                            article_data['first_author'] = f'{fore_name.text} {last_name.text}'
+                            article_data['author'] = f'{fore_name.text} {last_name.text}'
                         elif last_name is not None:
-                            article_data['first_author'] = last_name.text
+                            article_data['author'] = last_name.text
+
+                    # 提取期刊名称
+                    journal = element.find('.//Journal/Title')
+                    if journal is not None:
+                        article_data['journal'] = journal.text
 
                     # 提取DOI号
                     doi = element.find(".//ELocationID[@EIdType='doi']")
@@ -73,29 +79,29 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict:
                             for part in abstract_parts:
                                 # 获取标签属性
                                 label = part.get('Label')
-                                
+
                                 # 获取文本内容，包括可能的子元素
                                 text = ''
                                 if part.text:
                                     text += part.text
-                                
+
                                 # 处理可能的子元素（如<i>、<b>等）
                                 for child in part:
                                     if child.text:
                                         text += child.text
                                     if child.tail:
                                         text += child.tail
-                                
+
                                 # 处理元素的尾部文本
                                 if part.tail:
                                     text += part.tail
-                                
+
                                 # 组合标签和文本
                                 if label:
                                     abstract += f'{label}: {text}\n'
                                 else:
                                     abstract += f'{text}\n'
-                            
+
                             article_data['abstract'] = abstract.strip()
 
                     # 提取引用列表（只提取有PubMed ID的引用）
@@ -106,14 +112,16 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict:
                         if pubmed_id is not None and pubmed_id.text:
                             references.append(pubmed_id.text)
 
-                    if references:
-                        article_data['references'] = references
+                    article_data['references'] = references if references else []
 
-                    if 'doi' in article_data:
-                        article_id = article_data.get('pmid', str(article_count))
-                        result[article_id] = article_data
+                    # if 'doi' in article_data:
+                    #     article_id = article_data.get('pmid', str(article_count))
+                    #     result[article_id] = article_data
+                    article_id = article_data.get('pmid', str(article_count))
+                    result[article_id] = article_data
 
                     root.clear()
+                    article_count += 1
 
             return result
 
