@@ -1,9 +1,9 @@
+import json
 from datetime import datetime
 from typing import Optional
-import json
 
 from langchain_core.documents import Document
-from sqlmodel import SQLModel, Field, JSON
+from sqlmodel import JSON, Field, SQLModel
 
 
 class WriteProject(SQLModel):
@@ -29,9 +29,7 @@ class ProjectSources(SQLModel):
         """将 Document 列表序列化为 JSON 字符串"""
         sources_data = []
         for doc in documents:
-            sources_data.append(
-                {'page_content': doc.page_content, 'metadata': doc.metadata}
-            )
+            sources_data.append({'page_content': doc.page_content, 'metadata': doc.metadata})
         self.sources = json.dumps(sources_data)
 
     def get_sources(self) -> list[Document]:
