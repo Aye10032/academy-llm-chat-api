@@ -2,16 +2,16 @@ from operator import itemgetter
 
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import (
-    SystemMessage,
-    HumanMessage,
     BaseMessage,
+    HumanMessage,
+    SystemMessage,
     trim_messages,
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableLambda, RunnableSerializable
 
 from llm.core.model import load_llm
-from llm.core.template import RAG_SYSTEM_ZH, RAG_HUMAN_ZH
+from llm.core.template import RAG_HUMAN_ZH, RAG_SYSTEM_ZH
 from llm.rag.retriever import format_docs
 
 

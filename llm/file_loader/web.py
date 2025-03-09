@@ -1,6 +1,6 @@
 import datetime
 import random
-from typing import Optional, Self, Any
+from typing import Any, Optional, Self
 from uuid import uuid4
 
 import requests
@@ -9,23 +9,21 @@ from langchain_community.document_transformers import MarkdownifyTransformer
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from loguru import logger
-from pydantic import AnyHttpUrl, model_validator, BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field, model_validator
 from requests import HTTPError
 
 from app.core.config import get_settings
-from app.utils.network import retry, download_html
+from app.utils.network import download_html, retry
 from llm.core.model import load_jina_reader
 from llm.file_loader.loader import BaseFileLoader
-from llm.schemas import MarkdownMeta, ArticleBlock
+from llm.schemas import ArticleBlock, MarkdownMeta
 from llm.schemas.markdown import FileSource, SourceType
 
 network_setting = get_settings().server.network
 
 
 class SimpleWebLoader(BaseFileLoader):
-    def load(
-        self, origin_file_path: AnyHttpUrl, **kwargs
-    ) -> tuple[MarkdownMeta, list[Document]]:
+    def load(self, origin_file_path: AnyHttpUrl, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
         if network_setting.USE_PROXY:
             loader = WebBaseLoader(
                 str(origin_file_path),
@@ -55,15 +53,11 @@ class SimpleWebLoader(BaseFileLoader):
             title=kwargs.get('title', '无标题网页'),
             author='',
             year=kwargs.get('year', now_time.year),
-            source=[
-                FileSource(source_url=str(origin_file_path), source_type=SourceType.WEB)
-            ],
+            source=[FileSource(source_url=str(origin_file_path), source_type=SourceType.WEB)],
         )
 
         self.article = [ArticleBlock(text=self.file_meta.title, text_level=1)]
-        self.article.extend(
-            [ArticleBlock(text=doc.page_content) for doc in docs_transform]
-        )
+        self.article.extend([ArticleBlock(text=doc.page_content) for doc in docs_transform])
 
         md_splitter = MarkdownHeaderTextSplitter(
             headers_to_split_on=[
@@ -179,18 +173,14 @@ class JinaWebLoader(BaseFileLoader):
         data = JinaData.model_validate(json_data)
         return data
 
-    def load(
-        self, origin_file_path: AnyHttpUrl, **kwargs
-    ) -> tuple[MarkdownMeta, list[Document]]:
+    def load(self, origin_file_path: AnyHttpUrl, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
         doc_data = self._read_webpage(origin_file_path)
 
         self.file_meta = MarkdownMeta(
             title=doc_data.title,
             author='',
             year=kwargs.get('year', -1),
-            source=[
-                FileSource(source_url=origin_file_path, source_type=SourceType.WEB)
-            ],
+            source=[FileSource(source_url=origin_file_path, source_type=SourceType.WEB)],
         )
 
         self.article = [

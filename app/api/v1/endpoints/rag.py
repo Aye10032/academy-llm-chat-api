@@ -1,11 +1,11 @@
+import asyncio
+import json
 from datetime import datetime
+from enum import Enum
 from typing import Annotated, Union
 from uuid import uuid4
-from enum import Enum
-import json
-import asyncio
 
-from fastapi import APIRouter, Query, Depends, Form
+from fastapi import APIRouter, Depends, Form, Query
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain_core.messages import trim_messages
 from loguru import logger
@@ -17,14 +17,14 @@ import app.crud.knowledge_base as kb_crud
 import app.crud.user as user_crud
 from app.core.security import get_current_active_user
 from app.db.session import SessionDep, engine
-from app.models import UserTable, ChatSessionTable
+from app.models import ChatSessionTable, UserTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
 from app.schemas.knowledge_base import KnowledgeBase
 from app.schemas.user import UserUpdate
-from llm.core.chain import rag_chain, conclude_chat
+from llm.core.chain import conclude_chat, rag_chain
 from llm.core.model import load_embedding, load_reranker
 from llm.rag.retriever import base_retriever
-from llm.rag.storage import get_vector_db, get_doc_db
+from llm.rag.storage import get_doc_db, get_vector_db
 
 
 class ChatEventType(Enum):
@@ -58,9 +58,7 @@ async def read_knowledge_bases(
     return kb_crud.get_list(session, offset, limit)
 
 
-@router.post(
-    '/knowledge_bases/{knowledge_base_uid}/chats', description='在对应知识库下新建对话'
-)
+@router.post('/knowledge_bases/{knowledge_base_uid}/chats', description='在对应知识库下新建对话')
 async def insert_chat(
     session: SessionDep,
     knowledge_base_uid: str,
@@ -162,18 +160,14 @@ async def chat(
         doc_db = get_doc_db(table_name)
 
         # 发送文档检索状态
-        yield SSEMessage(
-            event=ChatEventType.STATUS, data='正在检索相关文档...'
-        ).to_sse()
+        yield SSEMessage(event=ChatEventType.STATUS, data='正在检索相关文档...').to_sse()
         await asyncio.sleep(0.1)
 
         retriever = base_retriever(vec_db, doc_db, reranker)
         docs = retriever.invoke(message)
 
         # 发送检索到的文档
-        docs_data = [
-            {'content': doc.page_content, 'metadata': doc.metadata} for doc in docs
-        ]
+        docs_data = [{'content': doc.page_content, 'metadata': doc.metadata} for doc in docs]
         yield SSEMessage(event=ChatEventType.DOCS, data=docs_data).to_sse()
         await asyncio.sleep(0.1)
 
@@ -197,9 +191,7 @@ async def chat(
         ):
             if chunk.content:
                 full_response += chunk.content
-                yield SSEMessage(
-                    event=ChatEventType.ANSWER, data=chunk.content
-                ).to_sse()
+                yield SSEMessage(event=ChatEventType.ANSWER, data=chunk.content).to_sse()
 
         logger.info(f'{model}: {full_response}')
         chat_message_history.add_user_message(message)

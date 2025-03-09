@@ -2,7 +2,7 @@ from enum import IntEnum
 from typing import Optional
 
 from pydantic import EmailStr
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
 
 
 class UserRole(IntEnum):
@@ -12,11 +12,11 @@ class UserRole(IntEnum):
 
 
 class User(SQLModel):
-    username: str = Field(default="")
+    username: str = Field(default='')
     email: EmailStr = Field(index=True, unique=True)
     role: UserRole = Field(default=UserRole.VISITOR)
-    last_knowledge_base: str = Field(default="")
-    last_project: str = Field(default="")
+    last_knowledge_base: str = Field(default='')
+    last_project: str = Field(default='')
 
 
 class UserPublic(User):

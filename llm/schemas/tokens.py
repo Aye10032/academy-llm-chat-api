@@ -1,7 +1,8 @@
 """
 重写langchain的token_usage类，添加默认值
 """
-from typing import Optional, Dict, Any, Union
+
+from typing import Any, Dict, Optional, Union
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
@@ -81,12 +82,14 @@ class UsageMetadata(BaseModel):
     """
 
     @classmethod
-    def create(cls, data: Optional[Union[Dict[str, Any], 'UsageMetadata']] = None) -> 'UsageMetadata':
+    def create(
+        cls, data: Optional[Union[Dict[str, Any], 'UsageMetadata']] = None
+    ) -> 'UsageMetadata':
         """创建一个UsageMetadata实例，可以处理实际数据或None
-        
+
         Args:
             data: 可以是字典数据、UsageMetadata实例或None
-            
+
         Returns:
             UsageMetadata: 返回一个新的UsageMetadata实例
         """
@@ -107,7 +110,7 @@ class UsageMetadata(BaseModel):
         """
         if llm.model_name == 'gpt-4o-mini':
             price = GPT_4O_MINI
-        elif llm.model_name in ['deepseek-chat','deepseek-ai/DeepSeek-V3']:
+        elif llm.model_name in ['deepseek-chat', 'deepseek-ai/DeepSeek-V3']:
             price = DEEPSEEK_V3
         elif llm.model_name == 'deepseek-reasoner':
             price = DEEPSEEK_R1
@@ -118,9 +121,11 @@ class UsageMetadata(BaseModel):
         else:
             price = GPT_4O
 
-        cost = (self.input_token_details.cache_read * price.cached_price +
-                (self.input_tokens - self.input_token_details.cache_read) * price.input_price +
-                self.output_tokens * price.output_price) / 1000000
+        cost = (
+            self.input_token_details.cache_read * price.cached_price
+            + (self.input_tokens - self.input_token_details.cache_read) * price.input_price
+            + self.output_tokens * price.output_price
+        ) / 1000000
         if price.is_usd:
             return cost * 7.29
         return cost

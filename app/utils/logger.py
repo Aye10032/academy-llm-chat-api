@@ -1,10 +1,10 @@
 import logging
 import sys
+from datetime import datetime
 from types import FrameType
 from typing import cast
 
 from loguru import logger
-from datetime import datetime
 
 from app.core.config import get_settings
 
@@ -25,11 +25,13 @@ class InterceptHandler(logging.Handler):
 
         if '/api/v1/auth' in record.getMessage():
             logger.opt(depth=depth, exception=record.exc_info).log(
-                'DEBUG', record.getMessage(),
+                'DEBUG',
+                record.getMessage(),
             )
         else:
             logger.opt(depth=depth, exception=record.exc_info).log(
-                level, record.getMessage(),
+                level,
+                record.getMessage(),
             )
 
 
@@ -39,35 +41,35 @@ month = now.month
 day = now.day
 
 loguru_config = {
-    "handlers": [
+    'handlers': [
         {
-            "sink": sys.stdout,
-            "level": get_settings().server.LOGGING_LEVEL,
-            "format": "<green>{time:HH:mm}</green> | <level>{level}</level> | "
-                      "<cyan>{module}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+            'sink': sys.stdout,
+            'level': get_settings().server.LOGGING_LEVEL,
+            'format': '<green>{time:HH:mm}</green> | <level>{level}</level> | '
+            '<cyan>{module}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>',
         },
         {
-            "sink": f'log/runtime_{year}{month:02d}{day:02d}.log',
-            "level": get_settings().server.LOGGING_LEVEL,
-            "rotation": "10 MB",
-            "retention": "1 week",
-            "encoding": 'utf-8',
-            "format": "{time:YYYY-mm-dd HH:mm:ss.SSS} | {thread.name} | {level} | {module} : {function}:{line} -  {message}"
+            'sink': f'log/runtime_{year}{month:02d}{day:02d}.log',
+            'level': get_settings().server.LOGGING_LEVEL,
+            'rotation': '10 MB',
+            'retention': '1 week',
+            'encoding': 'utf-8',
+            'format': '{time:YYYY-mm-dd HH:mm:ss.SSS} | {thread.name} | {level} | {module} : {function}:{line} -  {message}',
         },
         {
-            "sink": f'log/error/error_{year}{month:02d}{day:02d}.log',
-            "level": 'ERROR',
-            "retention": "1 week",
-            "rotation": "10 MB",
-            "encoding": 'utf-8',
-            "format": "{time:YYYY-mm-dd HH:mm:ss.SSS} | {thread.name} | {level} | {module} : {function}:{line} -  {message}"
+            'sink': f'log/error/error_{year}{month:02d}{day:02d}.log',
+            'level': 'ERROR',
+            'retention': '1 week',
+            'rotation': '10 MB',
+            'encoding': 'utf-8',
+            'format': '{time:YYYY-mm-dd HH:mm:ss.SSS} | {thread.name} | {level} | {module} : {function}:{line} -  {message}',
         },
     ],
 }
 
 
 def init_logging():
-    logger_names = ["uvicorn.asgi", "uvicorn.access", "uvicorn"]
+    logger_names = ['uvicorn.asgi', 'uvicorn.access', 'uvicorn']
 
     # change handler for default uvicorn logger
     logging.getLogger().handlers = [InterceptHandler()]

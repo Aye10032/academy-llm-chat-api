@@ -44,9 +44,7 @@ def retry(retries: int = 3, delay: float = 1) -> Callable:
                 ) as e:
                     if i == retries:
                         logger.error(f'Error: {repr(e)}.')
-                        logger.error(
-                            f'"{func.__name__}()" failed after {retries} retries.'
-                        )
+                        logger.error(f'"{func.__name__}()" failed after {retries} retries.')
                         break
                     else:
                         logger.debug(f'Error: {repr(e)} -> Retrying...')
@@ -94,21 +92,11 @@ def _replace_base64_images(html: str, new_image_src: str = '#') -> str:
 
 
 def clean_html(html: str, clean_svg: bool = False, clean_base64: bool = False):
-    html = re.sub(
-        SCRIPT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
-    html = re.sub(
-        STYLE_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
-    html = re.sub(
-        META_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
-    html = re.sub(
-        COMMENT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
-    html = re.sub(
-        LINK_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
+    html = re.sub(SCRIPT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    html = re.sub(STYLE_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    html = re.sub(META_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    html = re.sub(COMMENT_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    html = re.sub(LINK_PATTERN, '', html, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
 
     if clean_svg:
         html = _replace_svg(html)

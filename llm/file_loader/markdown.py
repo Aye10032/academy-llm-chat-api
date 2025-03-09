@@ -5,13 +5,12 @@ from uuid import uuid4
 import yaml
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
-from loguru import logger
 from pydantic import FilePath
 from pydantic_core import ValidationError
 
 from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import ArticleBlock
-from llm.schemas.markdown import MarkdownMeta, SourceType, FileSource
+from llm.schemas.markdown import FileSource, MarkdownMeta, SourceType
 
 
 class MarkdownLoader(BaseFileLoader):
@@ -24,9 +23,7 @@ class MarkdownLoader(BaseFileLoader):
         ```
     """
 
-    def load(
-        self, origin_file_path: FilePath, **kwargs
-    ) -> tuple[MarkdownMeta, list[Document]]:
+    def load(self, origin_file_path: FilePath, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
         """从markdown文件加载文档
 
         Args:

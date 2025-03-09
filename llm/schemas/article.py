@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 
 class ArticleBlock(BaseModel):
@@ -8,6 +8,7 @@ class ArticleBlock(BaseModel):
         text: 此段落的文本
         text_level: 此段落的文本等级。0代表正文，1-6代表markdown格式下的1到6级标题
     """
+
     text: str
     text_level: int = 0
 

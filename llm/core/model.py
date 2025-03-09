@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Optional, Union, Sequence
+from typing import Any, Optional, Sequence, Union
 
 import httpx
 import numpy as np
@@ -16,12 +16,12 @@ from pydantic import BaseModel, Field
 from torch import Tensor
 from tqdm import tqdm
 from transformers import (
-    PreTrainedTokenizerFast,
-    AutoTokenizer,
     AutoModel,
-    PreTrainedModel,
-    AutoModelForSequenceClassification,
     AutoModelForCausalLM,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizerFast,
 )
 
 from app.core.config import get_settings
@@ -70,29 +70,21 @@ class BgeM3Embeddings(BaseModel, Embeddings):
 
         if self.local_load:
             try:
-                self.bge_tokenizer: PreTrainedTokenizerFast = (
-                    AutoTokenizer.from_pretrained(self.local_path)
-                )
-                self.bge_model: PreTrainedModel = AutoModel.from_pretrained(
+                self.bge_tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
                     self.local_path
                 )
+                self.bge_model: PreTrainedModel = AutoModel.from_pretrained(self.local_path)
             except EnvironmentError:
-                logger.warning(
-                    'Load model from local fail. Download from huggingface...'
-                )
+                logger.warning('Load model from local fail. Download from huggingface...')
 
                 if get_settings().server.network.USE_PROXY:
                     k, v = get_settings().server.network.PROXY.split('://')
                     self.bge_tokenizer = AutoTokenizer.from_pretrained(
                         self.bge_model_name, proxies={k: v}
                     )
-                    self.bge_model = AutoModel.from_pretrained(
-                        self.bge_model_name, proxies={k: v}
-                    )
+                    self.bge_model = AutoModel.from_pretrained(self.bge_model_name, proxies={k: v})
                 else:
-                    self.bge_tokenizer = AutoTokenizer.from_pretrained(
-                        self.bge_model_name
-                    )
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
                     self.bge_model = AutoModel.from_pretrained(self.bge_model_name)
 
                 # save to local
@@ -151,12 +143,8 @@ class BgeM3Embeddings(BaseModel, Embeddings):
                 max_length=max_length,
             ).to(self.device)
 
-            last_hidden_state = self.bge_model(
-                **batch_data, return_dict=True
-            ).last_hidden_state
-            dense_vecs = self.dense_embedding(
-                last_hidden_state, batch_data['attention_mask']
-            )
+            last_hidden_state = self.bge_model(**batch_data, return_dict=True).last_hidden_state
+            dense_vecs = self.dense_embedding(last_hidden_state, batch_data['attention_mask'])
 
             if normalize_embeddings:
                 dense_vecs = torch.nn.functional.normalize(dense_vecs, dim=-1)
@@ -216,16 +204,14 @@ class BgeReranker(BaseModel):
 
         if self.local_load:
             try:
-                self.bge_tokenizer: PreTrainedTokenizerFast = (
-                    AutoTokenizer.from_pretrained(self.local_path)
+                self.bge_tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
+                    self.local_path
                 )
                 self.bge_model: PreTrainedModel = (
                     AutoModelForSequenceClassification.from_pretrained(self.local_path)
                 )
             except EnvironmentError:
-                logger.warning(
-                    'Load model from local fail. Download from huggingface...'
-                )
+                logger.warning('Load model from local fail. Download from huggingface...')
 
                 if get_settings().server.network.USE_PROXY:
                     k, v = get_settings().server.network.PROXY.split('://')
@@ -236,9 +222,7 @@ class BgeReranker(BaseModel):
                         self.bge_model_name, proxies={k: v}
                     )
                 else:
-                    self.bge_tokenizer = AutoTokenizer.from_pretrained(
-                        self.bge_model_name
-                    )
+                    self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
                     self.bge_model = AutoModelForSequenceClassification.from_pretrained(
                         self.bge_model_name
                     )
@@ -249,9 +233,7 @@ class BgeReranker(BaseModel):
                 self.bge_model.save_pretrained(self.local_path)
         else:
             self.bge_tokenizer = AutoTokenizer.from_pretrained(self.bge_model_name)
-            self.bge_model = AutoModelForSequenceClassification.from_pretrained(
-                self.bge_model_name
-            )
+            self.bge_model = AutoModelForSequenceClassification.from_pretrained(self.bge_model_name)
 
         if not self.device:
             self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -329,9 +311,7 @@ class BgeReranker(BaseModel):
             batch_size: int = self.encode_kwargs.get('batch_size', 256)
             max_length: int = self.encode_kwargs.get('max_length', 512)
             normalize: bool = self.encode_kwargs.get('normalize', False)
-            batch_scores = self.compute_score(
-                batch_pairs, batch_size, max_length, normalize
-            )
+            batch_scores = self.compute_score(batch_pairs, batch_size, max_length, normalize)
             rerank_scores.extend(batch_scores)
 
         rerank_results = list(zip(rerank_scores, documents))
@@ -352,9 +332,7 @@ class BgeReranker(BaseModel):
         callbacks: Optional[Callbacks] = None,
     ) -> Sequence[Document]:
         """Compress retrieved documents given the query context."""
-        return await run_in_executor(
-            None, self.compress_documents, documents, query, callbacks
-        )
+        return await run_in_executor(None, self.compress_documents, documents, query, callbacks)
 
     def compress_manuscripts(
         self,
@@ -363,9 +341,7 @@ class BgeReranker(BaseModel):
         callbacks: Optional[Callbacks] = None,
     ):
         sentence_pairs = [
-            (query, draft.title)
-            for draft in manuscripts
-            if isinstance(draft, Manuscript)
+            (query, draft.title) for draft in manuscripts if isinstance(draft, Manuscript)
         ]
         rerank_scores = []
 
@@ -378,9 +354,7 @@ class BgeReranker(BaseModel):
             batch_size: int = self.encode_kwargs.get('batch_size', 256)
             max_length: int = self.encode_kwargs.get('max_length', 512)
             normalize: bool = self.encode_kwargs.get('normalize', False)
-            batch_scores = self.compute_score(
-                batch_pairs, batch_size, max_length, normalize
-            )
+            batch_scores = self.compute_score(batch_pairs, batch_size, max_length, normalize)
             rerank_scores.extend(batch_scores)
 
         rerank_results = list(zip(rerank_scores, manuscripts))
@@ -425,16 +399,14 @@ class ReaderLM(BaseModel):
 
         if self.local_load:
             try:
-                self.jina_tokenizer: PreTrainedTokenizerFast = (
-                    AutoTokenizer.from_pretrained(self.local_path)
+                self.jina_tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
+                    self.local_path
                 )
                 self.jina_model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
                     self.local_path
                 )
             except EnvironmentError:
-                logger.warning(
-                    'Load model from local fail. Download from huggingface...'
-                )
+                logger.warning('Load model from local fail. Download from huggingface...')
 
                 if get_settings().server.network.USE_PROXY:
                     k, v = get_settings().server.network.PROXY.split('://')
@@ -480,7 +452,9 @@ class ReaderLM(BaseModel):
         Create a prompt for the model with optional instruction and JSON schema.
         """
         if not instruction:
-            instruction = 'Extract the main content from the given HTML and convert it to Markdown format.'
+            instruction = (
+                'Extract the main content from the given HTML and convert it to Markdown format.'
+            )
         if schema:
             instruction = 'Extract the specified information from a list of news threads and present it in a structured JSON format.'
             prompt = f'{instruction}\n```html\n{text}\n```\nThe JSON schema is as follows:```json\n{schema}\n```'
@@ -494,17 +468,13 @@ class ReaderLM(BaseModel):
             }
         ]
 
-        return tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
     def html_to_md(self, html: str) -> str:
         html = clean_html(html)
 
         input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer)
-        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(
-            self.device
-        )
+        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
         outputs = self.jina_model.generate(
             inputs,
             max_new_tokens=1024,
@@ -538,13 +508,9 @@ class ReaderLM(BaseModel):
         """
 
         html = clean_html(html)
-        input_prompt = self.create_prompt(
-            html, tokenizer=self.jina_tokenizer, schema=schema
-        )
+        input_prompt = self.create_prompt(html, tokenizer=self.jina_tokenizer, schema=schema)
 
-        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(
-            self.device
-        )
+        inputs = self.jina_tokenizer.encode(input_prompt, return_tensors='pt').to(self.device)
         outputs = self.jina_model.generate(
             inputs, max_new_tokens=1024, do_sample=False, repetition_penalty=1.08
         )

@@ -1,7 +1,7 @@
 import io
 from abc import ABC, abstractmethod
 from io import StringIO
-from typing import Optional, Any
+from typing import Any, Optional
 from uuid import uuid4
 
 import yaml
@@ -10,7 +10,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import MarkdownHeaderTextSplitter
-from pydantic import FilePath, BaseModel, Field, AnyHttpUrl
+from pydantic import AnyHttpUrl, BaseModel, Field, FilePath
 
 from llm.schemas import ArticleBlock, MarkdownMeta
 from llm.schemas.markdown import FileSource
@@ -110,9 +110,7 @@ class BaseFileLoader(BaseModel, ABC):
     def __article_to_str(self) -> str:
         return '  \n'.join(
             [
-                block.text
-                if block.text_level == 0
-                else f'{"#" * block.text_level} {block.text}'  # pylint: disable=inconsistent-quotes
+                block.text if block.text_level == 0 else f'{"#" * block.text_level} {block.text}'  # pylint: disable=inconsistent-quotes
                 for block in self.article
             ]
         )

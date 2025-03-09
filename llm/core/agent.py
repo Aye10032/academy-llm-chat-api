@@ -1,27 +1,26 @@
 import operator
 from operator import itemgetter
-
-from typing import Annotated, Literal, Optional, TypeVar, TypedDict
+from typing import Annotated, Literal, Optional, TypedDict, TypeVar
 from uuid import uuid4
 
+from langchain_core.documents import Document
 from langchain_core.messages import (
-    SystemMessage,
-    ToolMessage,
-    ToolCall,
     AIMessage,
+    SystemMessage,
+    ToolCall,
+    ToolMessage,
     trim_messages,
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.documents import Document
-from langchain_core.runnables.graph import MermaidDrawMethod, CurveStyle
+from langchain_core.runnables.graph import CurveStyle, MermaidDrawMethod
 from langchain_core.tools import BaseTool, tool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import START
+from langgraph.graph import END, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
-from langgraph.graph import StateGraph, END, MessagesState
-from pydantic import BaseModel, model_validator, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session
 from tqdm import tqdm
 
@@ -29,21 +28,21 @@ import app.crud.manuscript as manu_crud
 from app.db.session import engine
 from app.models import ManuscriptTable
 from app.schemas.manuscript import Manuscript, ManuscriptType
-from llm.core.model import load_reranker, load_llm
+from llm.core.model import load_llm, load_reranker
 from llm.core.template import (
-    OPTIMIZER_SYSTEM_ZH,
     AGENT_SYSTEM_ZH,
+    GENERATOR_HUMAN_ZH,
     GENERATOR_ROUTE_SYSTEM_ZH,
     GENERATOR_SYSTEM_ZH,
-    GENERATOR_HUMAN_ZH,
     KNOWLEDGE_MANAGE_SYSTEM_ZH,
+    OPTIMIZER_SYSTEM_ZH,
 )
 from llm.file_loader.web import SimpleWebLoader
 from llm.rag.retriever import format_docs
 from llm.schemas.tokens import UsageMetadata
 from llm.tool.modify import Modifier, OptimizerOutput, Rewriter
 from llm.tool.rag import RAGSearchTool, SelectKnowledgeBase, SelectKnowledgeBaseOutput
-from llm.tool.search import WebSearchTool, WebSearchResult
+from llm.tool.search import WebSearchResult, WebSearchTool
 
 T = TypeVar('T')
 
@@ -323,9 +322,7 @@ class KnowledgeManageAgent(BaseModel):
         messages = state['messages']
         tool_call: ToolCall = messages[-1].tool_calls[0]
 
-        search_results: list[WebSearchResult] = self.web_search_tool.invoke(
-            tool_call['args']
-        )
+        search_results: list[WebSearchResult] = self.web_search_tool.invoke(tool_call['args'])
 
         all_web_docs = []
         for result in tqdm(search_results, total=len(search_results)):
@@ -439,9 +436,7 @@ class OptimizerAgent(BaseModel):
 
         return '__end__'
 
-    def rewriter_node(
-        self, state: OptimizerAgentState
-    ) -> Command[Literal['optimizer_router']]:
+    def rewriter_node(self, state: OptimizerAgentState) -> Command[Literal['optimizer_router']]:
         message: AIMessage = state['messages'][-1]
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
@@ -466,9 +461,7 @@ class OptimizerAgent(BaseModel):
             goto='optimizer_router',
         )
 
-    def modify_node(
-        self, state: OptimizerAgentState
-    ) -> Command[Literal['optimizer_router']]:
+    def modify_node(self, state: OptimizerAgentState) -> Command[Literal['optimizer_router']]:
         message: AIMessage = state['messages'][-1]
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
@@ -596,7 +589,9 @@ class GenerateAgent(BaseModel):
                             '',
                             tool_calls=[
                                 ToolCall(
-                                    name=self.generator.name, args=tool_call['args'], id=tool_call_id
+                                    name=self.generator.name,
+                                    args=tool_call['args'],
+                                    id=tool_call_id,
                                 )
                             ],
                         )
@@ -630,16 +625,12 @@ class GenerateAgent(BaseModel):
         response = chain.invoke(
             {
                 'question': tool_call['args']['user_request'],
-                'information': '\n\n'.join(
-                    [draft.content for draft in state['information_list']]
-                ),
+                'information': '\n\n'.join([draft.content for draft in state['information_list']]),
             }
         )
 
         return {
-            'messages': [
-                ToolMessage('我已经完成了写作任务', tool_call_id=tool_call_id)
-            ],
+            'messages': [ToolMessage('我已经完成了写作任务', tool_call_id=tool_call_id)],
             'current_text': response.content,
         }
 
@@ -758,9 +749,7 @@ class MainAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        subgraph = GenerateAgent(
-            router_llm=self.router_llm, task_llm=self.task_llm
-        ).build()
+        subgraph = GenerateAgent(router_llm=self.router_llm, task_llm=self.task_llm).build()
 
         message = trim_messages(
             state['messages'],
@@ -780,9 +769,7 @@ class MainAgent(BaseModel):
             }
         )
         return {
-            'messages': [
-                ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)
-            ],
+            'messages': [ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)],
             'current_text': output['current_text'],
             'price': output['price'],
         }
@@ -813,9 +800,7 @@ class MainAgent(BaseModel):
         )
 
         return {
-            'messages': [
-                ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)
-            ],
+            'messages': [ToolMessage(output['messages'][-1].content, tool_call_id=tool_call_id)],
             'sources': output['sources'],
             'price': output['price'],
         }
@@ -825,9 +810,7 @@ class MainAgent(BaseModel):
         tool_call = message.tool_calls[0]
         tool_call_id = tool_call['id']
 
-        subgraph = OptimizerAgent(
-            router_llm=self.router_llm, task_llm=self.task_llm
-        ).build()
+        subgraph = OptimizerAgent(router_llm=self.router_llm, task_llm=self.task_llm).build()
         message = trim_messages(
             state['messages'],
             strategy='last',
@@ -837,14 +820,10 @@ class MainAgent(BaseModel):
             end_on=('human', 'tool'),
             include_system=False,
         )
-        response = subgraph.invoke(
-            {'messages': message, 'current_text': state['current_text']}
-        )
+        response = subgraph.invoke({'messages': message, 'current_text': state['current_text']})
         return {
             'messages': [
-                ToolMessage(
-                    content=response['messages'][-1].content, tool_call_id=tool_call_id
-                )
+                ToolMessage(content=response['messages'][-1].content, tool_call_id=tool_call_id)
             ],
             'current_text': response['current_text'],
             'price': response['price'],
@@ -881,9 +860,7 @@ class MainAgent(BaseModel):
         )
         graph.add_node(
             'knowledge_searcher',
-            KnowledgeManageAgent(
-                router_llm=self.router_llm, task_llm=self.task_llm
-            ).build(),
+            KnowledgeManageAgent(router_llm=self.router_llm, task_llm=self.task_llm).build(),
         )
 
         graph.add_edge(START, 'main_router')

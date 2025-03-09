@@ -172,8 +172,8 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
 
 
 if __name__ == '__main__':
-    for k,v in pubmed_xml_loader('../../test/pubmed25n1274.xml.gz').items():
+    for k, v in pubmed_xml_loader('../../test/pubmed25n1274.xml.gz').items():
         print(k)
-        for sk,sv in v.items():
+        for sk, sv in v.items():
             print(f'{sk}: {sv}')
         break

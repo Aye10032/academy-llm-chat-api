@@ -1,9 +1,7 @@
 from datetime import date
 
-from loguru import logger
-
 from llm.rag.graph_storage import NebulaGraphStore
-from llm.schemas.nebula_graph import PropType, Prop, Tag, Edge, VidType
+from llm.schemas.nebula_graph import Edge, Prop, PropType, Tag, VidType
 
 
 def init_pubmed_graph(drop_old: bool = False):
@@ -118,8 +116,8 @@ def init_pubmed_graph(drop_old: bool = False):
         store.create_edge(Edge(edge_name='HAS_KEYWORD'), check_exist=True)
         store.create_edge(Edge(edge_name='CITES'), check_exist=True)
 
-def insert_paper():
-    ...
+
+def insert_paper(): ...
 
 
 if __name__ == '__main__':

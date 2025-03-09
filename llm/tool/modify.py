@@ -1,15 +1,15 @@
 from typing import Optional, Type
 
-from langchain_core.messages import SystemMessage, BaseMessage
+from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
-from pydantic import model_validator, BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from llm.core.model import load_llm
-from llm.core.template import MODIFY_SYSTEM_ZH, REWRITER_SYSTEM_ZH, OPTIMIZER_HUMAN_ZH
+from llm.core.template import MODIFY_SYSTEM_ZH, OPTIMIZER_HUMAN_ZH, REWRITER_SYSTEM_ZH
 
 
 class RewriterInput(BaseModel):
@@ -73,9 +73,7 @@ class OptimizerOutput(BaseModel):
 
 class Modifier(BaseTool):
     name: str = 'modifier'
-    description: str = (
-        '我专注局部优化，包括词语替换、句式调整、语法修正、标点规范等细节修改'
-    )
+    description: str = '我专注局部优化，包括词语替换、句式调整、语法修正、标点规范等细节修改'
     args_schema: Type[BaseModel] = ModifierInput
     return_direct: bool = False
     handle_tool_error: bool = True

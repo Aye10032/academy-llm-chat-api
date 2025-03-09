@@ -334,7 +334,7 @@ class NebulaGraphStore:
 
         stmt_list.append([tag_name, f'({", ".join(prop_names)})'])
 
-        if isinstance(vid,str):
+        if isinstance(vid, str):
             stmt_list.append(['VALUES', f'"{vid}":'])
         else:
             stmt_list.append(['VALUES', f'{vid}:'])

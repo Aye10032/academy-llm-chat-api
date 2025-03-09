@@ -1,11 +1,11 @@
 import json
-from typing import Type, Optional
+from typing import Optional, Type
 
 import requests
 from duckduckgo_search import DDGS
 from langchain_core.tools import BaseTool, ToolException
 from loguru import logger
-from pydantic import BaseModel, Field, AnyHttpUrl
+from pydantic import AnyHttpUrl, BaseModel, Field
 
 from app.core.config import get_settings
 
@@ -41,9 +41,7 @@ class WebSearchTool(BaseTool):
         if serper_api := config.tool.search.SERPER_API:
             url = 'https://google.serper.dev/search'
 
-            payload = json.dumps(
-                {'q': query, 'k': self.max_search_result, 'gl': 'us', 'hl': 'en'}
-            )
+            payload = json.dumps({'q': query, 'k': self.max_search_result, 'gl': 'us', 'hl': 'en'})
             headers = {
                 'X-API-KEY': serper_api,
                 'Content-Type': 'application/json',
@@ -63,9 +61,7 @@ class WebSearchTool(BaseTool):
                     timeout=60,
                 )
             else:
-                response = requests.request(
-                    'POST', url, headers=headers, data=payload, timeout=60
-                )
+                response = requests.request('POST', url, headers=headers, data=payload, timeout=60)
 
             if response.status_code == 200:
                 search_data = json.loads(response.text)

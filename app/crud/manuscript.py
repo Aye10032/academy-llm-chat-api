@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models import ManuscriptTable
-from app.schemas.manuscript import ManuscriptUpdate, ManuscriptType
+from app.schemas.manuscript import ManuscriptType, ManuscriptUpdate
 
 
 def insert(session: Session, manuscript: ManuscriptTable) -> ManuscriptTable:
@@ -24,9 +24,7 @@ def delete(session: Session, uid: str):
 
 
 def delete_by_parent(session: Session, project_uid: str):
-    statement = select(ManuscriptTable).where(
-        ManuscriptTable.project_uid == project_uid
-    )
+    statement = select(ManuscriptTable).where(ManuscriptTable.project_uid == project_uid)
     results = session.exec(statement)
     manuscripts = results.all()
     session.delete(manuscripts)
@@ -51,9 +49,7 @@ def update(session: Session, uid: str, manuscript: ManuscriptUpdate) -> Manuscri
 
 def get_list(session: Session, project_uid: str):
     subquery = (
-        select(
-            ManuscriptTable.uid, func.max(ManuscriptTable.version).label('max_version')
-        )
+        select(ManuscriptTable.uid, func.max(ManuscriptTable.version).label('max_version'))
         .where(ManuscriptTable.project_uid == project_uid)
         .group_by(ManuscriptTable.uid)
         .subquery()

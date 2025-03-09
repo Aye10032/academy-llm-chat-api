@@ -22,9 +22,7 @@ def delete(session: Session, uid: str):
     session.commit()
 
 
-def update(
-    session: Session, project_uid: str, project: WriteProjectUpdate
-) -> WriteProjectTable:
+def update(session: Session, project_uid: str, project: WriteProjectUpdate) -> WriteProjectTable:
     db_project = get(session, project_uid)
     if not db_project:
         raise HTTPException(status_code=404, detail='该记录不存在！')

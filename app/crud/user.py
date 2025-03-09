@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import HTTPException
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select, Session
+from sqlmodel import Session, select
 
 from app.models import UserTable
 from app.schemas.user import UserPublic, UserUpdate

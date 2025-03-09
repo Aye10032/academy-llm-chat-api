@@ -2,7 +2,7 @@ import hashlib
 import json
 import time
 from functools import wraps
-from typing import Any, Optional, Callable
+from typing import Any, Callable, Optional
 
 from loguru import logger
 from pydantic import BaseModel
@@ -35,11 +35,7 @@ class ModelCache:
         return item.model
 
     def set(self, key: str, model: Any, ttl: Optional[int] = None):
-        self._cache[key] = CachedItem(
-            model=model,
-            last_used=time.time(),
-            ttl=ttl
-        )
+        self._cache[key] = CachedItem(model=model, last_used=time.time(), ttl=ttl)
 
     def clear(self):
         self._cache.clear()
@@ -49,7 +45,8 @@ class ModelCache:
         """清除所有过期的缓存"""
         current_time = time.time()
         expired_keys = [
-            key for key, item in self._cache.items()
+            key
+            for key, item in self._cache.items()
             if item.ttl is not None and current_time - item.last_used > item.ttl
         ]
         for key in expired_keys:
@@ -76,11 +73,9 @@ def cache_model(ttl: Optional[int] = 3600):
             cache_key_dict = {
                 'func_name': func.__name__,
                 'args': args,
-                'kwargs': {k: str(v) for k, v in kwargs.items()}
+                'kwargs': {k: str(v) for k, v in kwargs.items()},
             }
-            cache_key = hashlib.md5(
-                json.dumps(cache_key_dict, sort_keys=True).encode()
-            ).hexdigest()
+            cache_key = hashlib.md5(json.dumps(cache_key_dict, sort_keys=True).encode()).hexdigest()
 
             # 尝试从缓存获取
             cached_model = _model_cache.get(cache_key)

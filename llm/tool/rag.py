@@ -1,4 +1,4 @@
-from typing import Type, Optional
+from typing import Optional, Type
 
 from langchain.retrievers import MultiVectorRetriever
 from langchain_core.documents import Document
@@ -15,7 +15,7 @@ from app.db.session import engine
 from llm.core.model import load_embedding, load_llm
 from llm.core.template import SELECT_KNOWLEDGE_BASE_SYSTEM_ZH
 from llm.rag.retriever import ExprRetriever
-from llm.rag.storage import get_vector_db, get_doc_db
+from llm.rag.storage import get_doc_db, get_vector_db
 
 
 class SelectKnowledgeBaseInput(BaseModel):
@@ -30,19 +30,13 @@ class SelectKnowledgeBaseOutput(BaseModel):
     question: str = Field(
         description='根据所需要的信息分析的来的，具体用于从知识库中找回文本的语句'
     )
-    table_name: str = Field(
-        description='查询的知识库名称。如果没有合适的知识库，则留空。'
-    )
-    paper_first: bool = Field(
-        description='用户的搜索请求是否适合先进行文章检索再进行内容检索？'
-    )
+    table_name: str = Field(description='查询的知识库名称。如果没有合适的知识库，则留空。')
+    paper_first: bool = Field(description='用户的搜索请求是否适合先进行文章检索再进行内容检索？')
 
 
 class SelectKnowledgeBase(BaseTool):
     name: str = 'select_vecstore'
-    description: str = (
-        '向量知识库查询工具，能够根据用户的需求自行判断最合适的数据库进行查询'
-    )
+    description: str = '向量知识库查询工具，能够根据用户的需求自行判断最合适的数据库进行查询'
     args_schema: Type[BaseModel] = SelectKnowledgeBaseInput
     return_direct: bool = False
     handle_tool_error: bool = True
@@ -73,15 +67,10 @@ class SelectKnowledgeBase(BaseTool):
             )
         else:
             available_kbs = '\n=================\n'.join(
-                [
-                    f'name: {kb.table_name}\ndescription: {kb.description}'
-                    for kb in kb_list
-                ]
+                [f'name: {kb.table_name}\ndescription: {kb.description}' for kb in kb_list]
             )
 
-        llm = self.llm.with_structured_output(
-            SelectKnowledgeBaseOutput, include_raw=True
-        )
+        llm = self.llm.with_structured_output(SelectKnowledgeBaseOutput, include_raw=True)
         prompt = ChatPromptTemplate.from_messages(
             [('system', SELECT_KNOWLEDGE_BASE_SYSTEM_ZH), ('human', '{human_input}')]
         )

@@ -327,7 +327,7 @@ async def download_http_files(
     base_url: str,
     remote_path: str | os.PathLike,
     file_list: list[str],
-    local_dir: str| os.PathLike,
+    local_dir: str | os.PathLike,
     max_concurrency: int = 5,
     retry_count: int = 3,
     timeout: int = 30,

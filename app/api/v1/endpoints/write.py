@@ -1,13 +1,13 @@
 import asyncio
 import json
+import os
 from datetime import datetime
 from enum import Enum
 from operator import itemgetter
 from typing import Annotated, Union
 from uuid import uuid4
-import os
 
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, trim_messages
@@ -24,10 +24,10 @@ import app.crud.write_project as project_crud
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
 from app.db.session import SessionDep, engine
-from app.models import UserTable, WriteProjectTable, ChatSessionTable, ManuscriptTable
+from app.models import ChatSessionTable, ManuscriptTable, UserTable, WriteProjectTable
 from app.models.write_project import ChatRecordTable, ProjectSourcesTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
-from app.schemas.manuscript import ManuscriptPublic, Manuscript, ManuscriptType
+from app.schemas.manuscript import Manuscript, ManuscriptPublic, ManuscriptType
 from app.schemas.user import UserUpdate
 from app.schemas.write_project import WriteProject, WriteProjectUpdate
 from llm.core.agent import MainAgent, MainAgentState
@@ -107,9 +107,7 @@ async def delete_project(
     # TODO 视情况是否要删除其他东西
     chat_sessions = chat_crud.get_list(session, project_uid, str(current_user.email))
     for chat_session in chat_sessions:
-        chat_message_history = SQLChatMessageHistory(
-            session_id=chat_session.uid, connection=engine
-        )
+        chat_message_history = SQLChatMessageHistory(session_id=chat_session.uid, connection=engine)
         chat_message_history.clear()
         chat_crud.delete(session, chat_session.uid)
 
@@ -117,9 +115,7 @@ async def delete_project(
     source_crud.delete_by_parent(session, project_uid)
 
 
-@router.get(
-    '/projects', description='返回知识库列表', response_model=list[WriteProject]
-)
+@router.get('/projects', description='返回知识库列表', response_model=list[WriteProject])
 async def read_projects(
     session: SessionDep,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
@@ -263,9 +259,7 @@ async def get_chats(
     return chat_crud.get_list(session, project_uid, str(current_user.email))
 
 
-@router.get(
-    '/projects/{project_uid}/chats/{chat_uid}/messages', description='加载历史对话'
-)
+@router.get('/projects/{project_uid}/chats/{chat_uid}/messages', description='加载历史对话')
 async def get_chat(
     project_uid: str,
     chat_uid: str,
@@ -275,9 +269,7 @@ async def get_chat(
     return chat_message_history.messages
 
 
-@router.post(
-    '/projects/{project_uid}/chats/{chat_uid}/messages', description='请求对话'
-)
+@router.post('/projects/{project_uid}/chats/{chat_uid}/messages', description='请求对话')
 async def chat(
     session: SessionDep,
     project_uid: str,
@@ -361,8 +353,7 @@ async def chat(
                 old_source_data = source_crud.get_list(session, project_uid)
                 if old_source_data:
                     old_source = [
-                        (doc.metadata['file_id'], doc)
-                        for doc in old_source_data.get_sources()
+                        (doc.metadata['file_id'], doc) for doc in old_source_data.get_sources()
                     ]
                 else:
                     old_source = []
@@ -404,13 +395,8 @@ async def chat(
 
                     elif event['event'] == 'on_chain_end':
                         if event['name'] == 'main_route':
-                            yield SSEMessage(
-                                event=ChatEventType.STATUS, data='chat_end'
-                            ).to_sse()
-                        elif (
-                            event['name'] == 'LangGraph'
-                            and len(event['metadata'].keys()) == 1
-                        ):
+                            yield SSEMessage(event=ChatEventType.STATUS, data='chat_end').to_sse()
+                        elif event['name'] == 'LangGraph' and len(event['metadata'].keys()) == 1:
                             now_time = datetime.now()
                             final_output: MainAgentState = event['data']['output']
 
@@ -462,9 +448,7 @@ async def chat(
                                 event=ChatEventType.WRITE,
                                 data='\n\n---\n\n',
                             ).to_sse()
-                            yield SSEMessage(
-                                event=ChatEventType.STATUS, data='修改文本'
-                            ).to_sse()
+                            yield SSEMessage(event=ChatEventType.STATUS, data='修改文本').to_sse()
                         else:
                             yield SSEMessage(
                                 event=ChatEventType.STATUS, data=event['name']
@@ -480,9 +464,7 @@ async def chat(
                                 event=ChatEventType.STATUS, data='整理写作资料'
                             ).to_sse()
                         elif event['name'] == 'generator':
-                            yield SSEMessage(
-                                event=ChatEventType.STATUS, data='文本创作'
-                            ).to_sse()
+                            yield SSEMessage(event=ChatEventType.STATUS, data='文本创作').to_sse()
 
                 logger.info(f'{model}: {full_response}')
                 chat_message_history.add_user_message(message)
@@ -514,15 +496,9 @@ async def chat(
 
     # 自动生成总结
     chat_info = chat_crud.get(session, chat_uid)
-    if (
-        chat_info
-        and chat_info.description == '新建对话'
-        and chat_message_history.messages
-    ):
+    if chat_info and chat_info.description == '新建对话' and chat_message_history.messages:
         asyncio.create_task(generate_summary())
 
     # 更新用户信息
-    user_crud.update(
-        session, str(current_user.email), UserUpdate(last_project=project_uid)
-    )
+    user_crud.update(session, str(current_user.email), UserUpdate(last_project=project_uid))
     return StreamingResponse(event_generator(), media_type='text/event-stream')

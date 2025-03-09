@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlmodel import select, Session
+from sqlmodel import Session, select
 
 from app.models import ChatSessionTable
 from app.schemas.chat_session import ChatSessionUpdate
@@ -23,18 +23,14 @@ def delete(session: Session, uid: str):
 
 
 def delete_by_parent(session: Session, parent_uid: str):
-    statement = select(ChatSessionTable).where(
-        ChatSessionTable.parent_uid == parent_uid
-    )
+    statement = select(ChatSessionTable).where(ChatSessionTable.parent_uid == parent_uid)
     results = session.exec(statement)
     chat_session = results.all()
     session.delete(chat_session)
     session.commit()
 
 
-def update(
-    session: Session, chat_uid: str, chat_session: ChatSessionUpdate
-) -> ChatSessionTable:
+def update(session: Session, chat_uid: str, chat_session: ChatSessionUpdate) -> ChatSessionTable:
     db_chat = get(session, chat_uid)
     if not db_chat:
         raise HTTPException(status_code=404, detail='该记录不存在！')
@@ -47,12 +43,12 @@ def update(
     return db_chat
 
 
-def get_list(
-    session: Session, parent_uid: str, use_email: str
-) -> Optional[ChatSessionTable]:
-    statement = select(ChatSessionTable).where(
-        ChatSessionTable.parent_uid == parent_uid
-    ).where(ChatSessionTable.user_email == use_email)
+def get_list(session: Session, parent_uid: str, use_email: str) -> Optional[ChatSessionTable]:
+    statement = (
+        select(ChatSessionTable)
+        .where(ChatSessionTable.parent_uid == parent_uid)
+        .where(ChatSessionTable.user_email == use_email)
+    )
     return session.exec(statement).all()
 
 

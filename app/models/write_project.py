@@ -2,7 +2,7 @@ from typing import Optional
 
 from sqlmodel import Field
 
-from app.schemas.write_project import WriteProject, ProjectSources, ChatRecord
+from app.schemas.write_project import ChatRecord, ProjectSources, WriteProject
 
 
 class WriteProjectTable(WriteProject, table=True):

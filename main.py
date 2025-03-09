@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from loguru import logger
 from starlette.middleware.cors import CORSMiddleware
 
+from app.api.v1.endpoints import auth, rag, resource, user, write
 from app.core.config import get_settings
-from app.api.v1.endpoints import auth, rag, user, write, resource
 from app.db.session import create_db_and_tables
 from app.utils.logger import init_logging
 
@@ -19,9 +19,7 @@ async def lifespan(main_app: FastAPI):  # pylint: disable=unused-argument
     logger.info('server stop')
 
 
-app = FastAPI(
-    title=get_settings().PROJECT_NAME, version=get_settings().VERSION, lifespan=lifespan
-)
+app = FastAPI(title=get_settings().PROJECT_NAME, version=get_settings().VERSION, lifespan=lifespan)
 
 origins = [
     'http://localhost',

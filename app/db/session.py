@@ -2,8 +2,8 @@ from typing import Annotated
 
 from fastapi import Depends
 from loguru import logger
-from sqlalchemy import create_engine, MetaData
-from sqlmodel import SQLModel, Session
+from sqlalchemy import MetaData, create_engine
+from sqlmodel import Session, SQLModel
 
 from app.core.config import get_settings
 

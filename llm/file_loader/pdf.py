@@ -1,7 +1,7 @@
 import random
 import re
 from enum import StrEnum
-from typing import Literal, Any
+from typing import Any, Literal
 
 import requests
 from bs4 import BeautifulSoup
@@ -16,7 +16,7 @@ from urllib3.exceptions import ResponseError
 from app.core.config import GrobidSetting, get_settings
 from app.utils.network import retry
 from llm.file_loader.loader import BaseFileLoader
-from llm.schemas import MarkdownMeta, ArticleBlock
+from llm.schemas import ArticleBlock, MarkdownMeta
 from llm.schemas.markdown import FileSource, SourceType
 
 
@@ -44,9 +44,7 @@ class DOINotFoundError(Exception):
 
 
 @retry(delay=random.uniform(2.0, 5.0))
-def get_paper_info(
-    pmid: str, silent: bool = True
-) -> tuple[list[ArticleBlock], MarkdownMeta]:
+def get_paper_info(pmid: str, silent: bool = True) -> tuple[list[ArticleBlock], MarkdownMeta]:
     """根据pubmed id获取文献信息
 
     Args:
@@ -60,7 +58,9 @@ def get_paper_info(
     if not silent:
         logger.info(f'request PMID:{pmid}')
 
-    url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&retmode=xml'
+    url = (
+        f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&retmode=xml'
+    )
     headers = {
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0'
     }
@@ -70,36 +70,20 @@ def get_paper_info(
             'http': get_settings().server.network.PROXY,
             'https': get_settings().server.network.PROXY,
         }
-        response = requests.request(
-            'GET', url, headers=headers, proxies=proxies, timeout=10
-        )
+        response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
     else:
         response = requests.request('GET', url, headers=headers, timeout=10)
 
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'xml')
 
-        title = (
-            soup.find('Article').find('ArticleTitle').text
-            if soup.find('Article')
-            else None
-        )
-        year = (
-            soup.find('Article').find('JournalIssue').find('PubDate').find('Year').text
-        )
+        title = soup.find('Article').find('ArticleTitle').text if soup.find('Article') else None
+        year = soup.find('Article').find('JournalIssue').find('PubDate').find('Year').text
 
         author = ''
         if author_block := soup.find('Author'):
-            last_name = (
-                author_block.find('LastName').text
-                if author_block.find('LastName')
-                else ''
-            )
-            initials = (
-                author_block.find('Initials').text
-                if author_block.find('Initials')
-                else ''
-            )
+            last_name = author_block.find('LastName').text if author_block.find('LastName') else ''
+            initials = author_block.find('Initials').text if author_block.find('Initials') else ''
             author = f'{last_name}, {initials}'
 
         abstract = soup.find('AbstractText').text if soup.find('AbstractText') else None
@@ -116,9 +100,7 @@ def get_paper_info(
             author=author,
             year=int(year),
             source=[
-                FileSource(
-                    source_url=f'https://doi.org/{doi}', source_type=SourceType.WEB
-                ),
+                FileSource(source_url=f'https://doi.org/{doi}', source_type=SourceType.WEB),
                 FileSource(
                     source_url=f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/',
                     source_type=SourceType.PUBMED,
@@ -138,9 +120,7 @@ def get_paper_info(
 
 
 @retry(delay=random.uniform(2.0, 5.0))
-def get_info_by_doi(
-    doi: str, silent: bool = True
-) -> tuple[list[ArticleBlock], MarkdownMeta]:
+def get_info_by_doi(doi: str, silent: bool = True) -> tuple[list[ArticleBlock], MarkdownMeta]:
     """通过DOI号补全文献信息
 
     Args:
@@ -164,9 +144,7 @@ def get_info_by_doi(
             'http': get_settings().server.network.PROXY,
             'https': get_settings().server.network.PROXY,
         }
-        response = requests.request(
-            'GET', url, headers=headers, proxies=proxies, timeout=10
-        )
+        response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
     else:
         response = requests.request('GET', url, headers=headers, timeout=10)
 
@@ -198,9 +176,7 @@ class GrobidConnector:
     def __enter__(self):
         self.session = requests.Session()
 
-        retries = Retry(
-            total=5, backoff_factor=5, status_forcelist=[500, 502, 503, 504, 300]
-        )
+        retries = Retry(total=5, backoff_factor=5, status_forcelist=[500, 502, 503, 504, 300])
         adapter = HTTPAdapter(max_retries=retries)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
@@ -346,9 +322,7 @@ class PdfLoader(BaseFileLoader):
         gr_setting = get_settings().fileloader.grobid
 
         with GrobidConnector(gr_setting) as connector:
-            loader = PdfLoader(
-                keep_title=True, add_toc=True, solver='grobid', connector=connector
-            )
+            loader = PdfLoader(keep_title=True, add_toc=True, solver='grobid', connector=connector)
 
             pdf_list = glob.glob('test/*.pdf')
             for file in tqdm(pdf_list, total=len(pdf_list)):
@@ -360,9 +334,7 @@ class PdfLoader(BaseFileLoader):
     solver: Literal['grobid', 'doc2x']
     connector: Any
 
-    def load(
-        self, origin_file_path: FilePath, **kwargs
-    ) -> tuple[MarkdownMeta, list[Document]]:
+    def load(self, origin_file_path: FilePath, **kwargs) -> tuple[MarkdownMeta, list[Document]]:
         assert self.connector
 
         if self.solver == 'grobid':
