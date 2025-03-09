@@ -1,5 +1,6 @@
 import gzip
 import xml.etree.ElementTree as ET
+from datetime import date
 from typing import Any
 
 from loguru import logger
@@ -24,8 +25,7 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
             context = iter(context)
             event, root = next(context)
 
-            article_count = 0
-            last_year = 0
+            last_date = date(1970, 1, 1)
 
             for event, element in context:
                 if event == 'end' and element.tag == 'PubmedArticle':
@@ -41,29 +41,62 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
                     if title_elem is not None:
                         article_data['title'] = title_elem.text
 
-                    # 提取发表年份
-                    pub_date = element.find('.//PubDate/Year')
-                    if pub_date is not None:
-                        article_data['year'] = int(pub_date.text)
-                        last_year = article_data['year']
+                    # 提取发表日期
+                    pub_date_elem = element.find('.//DateCompleted')
+                    if pub_date_elem is None:
+                        pub_date_elem = element.find('.//DateRevised')
+                    if pub_date_elem is not None:
+                        year_elem = pub_date_elem.find('Year')
+                        month_elem = pub_date_elem.find('Month')
+                        day_elem = pub_date_elem.find('Day')
+
+                        year = int(year_elem.text) if year_elem is not None else last_date.year
+                        month = int(month_elem.text) if month_elem is not None else last_date.month
+                        day = int(day_elem.text) if day_elem is not None else last_date.day
+
+                        article_date = date(year, month, day)
+                        article_data['pub_date'] = article_date
+                        last_date = article_date
                     else:
-                        # 可以认为论文的年限是挨着的
-                        article_data['year'] = last_year
+                        # 假设列表内论文的日期是挨着的
+                        article_data['pub_date'] = last_date
 
-                    # 提取第一作者
-                    first_author = element.find('.//AuthorList/Author')
-                    if first_author is not None:
-                        last_name = first_author.find('LastName')
-                        fore_name = first_author.find('ForeName')
+                    # 提取作者列表
+                    authors = []
+                    author_list = element.findall('.//AuthorList/Author')
+                    for author in author_list:
+                        author_data = {}
+
+                        last_name = author.find('LastName')
+                        fore_name = author.find('ForeName')
                         if last_name is not None and fore_name is not None:
-                            article_data['author'] = f'{fore_name.text} {last_name.text}'
+                            author_name = f'{fore_name.text} {last_name.text}'
                         elif last_name is not None:
-                            article_data['author'] = last_name.text
+                            author_name = last_name.text
+                        author_data['name'] = author_name
 
-                    # 提取期刊名称
-                    journal = element.find('.//Journal/Title')
-                    if journal is not None:
-                        article_data['journal'] = journal.text
+                        affiliation_elem = author.find('./AffiliationInfo/Affiliation')
+                        if affiliation_elem is not None:
+                            author_data['affiliation'] = affiliation_elem.text
+
+                        authors.append(author_data)
+                    article_data['author'] = authors
+
+                    # 提取期刊名称和ISSN编号
+                    journal_data = {}
+                    journal_title = element.find('.//Journal/Title')
+                    if journal_title is not None:
+                        journal_data['name'] = journal_title.text
+
+                    issn_elem = element.find('.//Journal/ISSN[@IssnType="Print"]')
+                    if issn_elem is not None:
+                        journal_data['issn'] = issn_elem.text
+                    else:
+                        # 如果没有Print类型的ISSN，尝试获取任何类型的ISSN
+                        issn_elem = element.find('.//Journal/ISSN')
+                        if issn_elem is not None:
+                            journal_data['issn'] = issn_elem.text
+                    article_data['journal'] = journal_data
 
                     # 提取DOI号
                     doi = element.find(".//ELocationID[@EIdType='doi']")
@@ -104,6 +137,14 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
 
                             article_data['abstract'] = abstract.strip()
 
+                    # 提取关键词列表
+                    keywords = []
+                    keyword_list = element.findall('.//KeywordList/Keyword')
+                    for keyword in keyword_list:
+                        if keyword is not None and keyword.text:
+                            keywords.append(keyword.text)
+                    article_data['keywords'] = keywords if keywords else []
+
                     # 提取引用列表（只提取有PubMed ID的引用）
                     references = []
                     reference_list = element.findall('.//PubmedData/ReferenceList/Reference')
@@ -111,17 +152,17 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
                         pubmed_id = reference.find('./ArticleIdList/ArticleId[@IdType="pubmed"]')
                         if pubmed_id is not None and pubmed_id.text:
                             references.append(pubmed_id.text)
-
                     article_data['references'] = references if references else []
 
-                    # if 'doi' in article_data:
-                    #     article_id = article_data.get('pmid', str(article_count))
-                    #     result[article_id] = article_data
-                    article_id = article_data.get('pmid', str(article_count))
+                    # 提取引用数
+                    ref_num_elem = element.find('.//NumberOfReferences')
+                    ref_num = int(ref_num_elem.text) if ref_num_elem is not None else 0
+                    article_data['reference_num'] = ref_num
+
+                    article_id = article_data['pmid']
                     result[article_id] = article_data
 
                     root.clear()
-                    article_count += 1
 
             return result
 
@@ -129,3 +170,10 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
         logger.error(f'解析PubMed文件时出错: {str(e)}')
         raise
 
+
+if __name__ == '__main__':
+    for k,v in pubmed_xml_loader('../../test/pubmed25n1274.xml.gz').items():
+        print(k)
+        for sk,sv in v.items():
+            print(f'{sk}: {sv}')
+        break
