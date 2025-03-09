@@ -9,7 +9,7 @@ from langchain_core.stores import BaseStore
 from langchain_milvus import Milvus
 from langchain_milvus.vectorstores import milvus
 from loguru import logger
-from pymilvus import MilvusClient, DataType
+from pymilvus import DataType, MilvusClient
 from pymilvus.orm.types import infer_dtype_bydata
 
 from app.core.config import get_settings
@@ -39,8 +39,8 @@ class SqliteDocStore(BaseStore[str, Document]):
             store = SqliteDocStore('docs.db', 'documents')
 
             # Create sample documents
-            doc1 = Document(page_content="Hello", metadata={"source": "doc1"})
-            doc2 = Document(page_content="World", metadata={"source": "doc2"})
+            doc1 = Document(page_content='Hello', metadata={'source': 'doc1'})
+            doc2 = Document(page_content='World', metadata={'source': 'doc2'})
 
             # Store documents
             store.mset([('doc1', doc1), ('doc2', doc2)])
@@ -62,13 +62,13 @@ class SqliteDocStore(BaseStore[str, Document]):
     """
 
     def __init__(
-            self,
-            connection_string: str,
-            table_name: str,
-            drop_old: bool = False,
-            connection: Optional[sqlite3.connect] = None,
-            engine_args: Optional[dict[str, Any]] = None,
-            iterator_window_size: int = 500
+        self,
+        connection_string: str,
+        table_name: str,
+        drop_old: bool = False,
+        connection: Optional[sqlite3.connect] = None,
+        engine_args: Optional[dict[str, Any]] = None,
+        iterator_window_size: int = 500,
     ) -> None:
         self.connection_string = connection_string
         self.table_name = table_name
@@ -108,7 +108,7 @@ class SqliteDocStore(BaseStore[str, Document]):
         cur = self._conn.cursor()
         res = cur.execute(f"SELECT name FROM sqlite_master WHERE name='{self.table_name}'")
         if res.fetchone() is not None:
-            stmt = f"DROP table {self.table_name}"
+            stmt = f'DROP table {self.table_name}'
             cur.execute(stmt)
             self._conn.commit()
             logger.info(f'删除了全文存储数据表 {self.table_name}')
@@ -166,7 +166,7 @@ class SqliteDocStore(BaseStore[str, Document]):
             content = self.__serialize_value(item)
             data.append((content, doc_id))
 
-        cur.executemany(f"INSERT INTO {self.table_name} VALUES(?, ?)", data)
+        cur.executemany(f'INSERT INTO {self.table_name} VALUES(?, ?)', data)
         self._conn.commit()
         cur.close()
 
@@ -176,7 +176,7 @@ class SqliteDocStore(BaseStore[str, Document]):
         if res.fetchone() is None:
             raise ValueError('Collection not found')
         if keys is not None:
-            stmt = f"DELETE FROM {self.table_name} WHERE doc_id IN ({','.join(['?'] * len(keys))})"
+            stmt = f'DELETE FROM {self.table_name} WHERE doc_id IN ({",".join(["?"] * len(keys))})'
             cur.execute(stmt)
         self._conn.commit()
         cur.close()
@@ -185,10 +185,10 @@ class SqliteDocStore(BaseStore[str, Document]):
         cur = self._conn.cursor()
         start = 0
         while True:
-            query = f"SELECT doc_id FROM {self.table_name}"
+            query = f'SELECT doc_id FROM {self.table_name}'
             if prefix is not None:
                 query += f" AND doc_id LIKE '{prefix}%'"
-            query += f" LIMIT {start}, {self.iterator_window_size}"
+            query += f' LIMIT {start}, {self.iterator_window_size}'
             cur.execute(query)
             items = cur.fetchall()
 
@@ -202,12 +202,12 @@ class SqliteDocStore(BaseStore[str, Document]):
 
 
 def create_vector_db(
-        table_name: str,
-        embedding_model: Embeddings,
-        *,
-        db_name: str = 'default',
-        index_params: Optional[dict[str, Any]] = None,
-        drop_old: bool = False
+    table_name: str,
+    embedding_model: Embeddings,
+    *,
+    db_name: str = 'default',
+    index_params: Optional[dict[str, Any]] = None,
+    drop_old: bool = False,
 ) -> Milvus:
     """初始化Milvus数据库
 
@@ -258,7 +258,7 @@ def create_vector_db(
         metric_type='L2',
         schema=schema,
         auto_id=True,
-        index_params=index_params
+        index_params=index_params,
     )
     client.close()
 
@@ -268,11 +268,7 @@ def create_vector_db(
 
 
 def get_vector_db(
-        table_name: str,
-        embedding_model: Embeddings,
-        *,
-        db_name: str = 'default',
-        ef: int = 10
+    table_name: str, embedding_model: Embeddings, *, db_name: str = 'default', ef: int = 10
 ) -> Milvus:
     """返回Milvus向量数据库对象
 
@@ -292,7 +288,7 @@ def get_vector_db(
         collection_name=table_name,
         connection_args=milvus_cfg.get_conn_args(db_name),
         search_params={'metric_type': 'L2', 'params': {'ef': ef}},
-        auto_id=True
+        auto_id=True,
     )
 
     return vector_db
@@ -302,7 +298,7 @@ def get_doc_db(table_name: str, *, drop_old: bool = False) -> BaseStore:
     doc_store = SqliteDocStore(
         connection_string=retriever_cfg.knowledge_base.DOC_URL,
         table_name=table_name,
-        drop_old=drop_old
+        drop_old=drop_old,
     )
 
     return doc_store
