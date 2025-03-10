@@ -1,9 +1,9 @@
 [project]
 name = "academy-llm-chat-api"
 version = "0.1.0"
-description = "Add your description here"
+description = "学术大模型助手后端服务"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "bs4>=0.0.2",
     "click>=8.1.8",
