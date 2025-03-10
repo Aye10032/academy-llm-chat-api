@@ -14,8 +14,6 @@ from pymilvus.orm.types import infer_dtype_bydata
 
 from app.core.config import get_settings
 
-retriever_cfg = get_settings().retriever
-
 
 class SqliteDocStore(BaseStore[str, Document]):
     """SQLite-based document store for persisting Document objects.
@@ -224,7 +222,7 @@ def create_vector_db(
     vector_field_embeddings = embedding_model.embed_documents(['test'])
     dim = len(vector_field_embeddings[0])
 
-    client = MilvusClient(**retriever_cfg.knowledge_base.milvus.get_conn_args(db_name))
+    client = MilvusClient(**get_settings().knowledge_base.milvus.get_conn_args(db_name))
 
     if drop_old and client.has_collection(table_name):
         client.drop_collection(table_name)
@@ -282,7 +280,7 @@ def get_vector_db(
         Milvus: langchain格式的Milvus数据库对象
     """
 
-    milvus_cfg = retriever_cfg.knowledge_base.milvus
+    milvus_cfg = get_settings().knowledge_base.milvus
     vector_db: milvus = Milvus(
         embedding_model,
         collection_name=table_name,
@@ -296,7 +294,7 @@ def get_vector_db(
 
 def get_doc_db(table_name: str, *, drop_old: bool = False) -> BaseStore:
     doc_store = SqliteDocStore(
-        connection_string=retriever_cfg.knowledge_base.DOC_URL,
+        connection_string=get_settings().knowledge_base.DOC_URL,
         table_name=table_name,
         drop_old=drop_old,
     )

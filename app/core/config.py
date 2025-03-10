@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Any, Literal, Optional, Self, Type
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator, EmailStr
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -14,32 +14,44 @@ from pydantic_settings import (
 )
 
 
-class ServerNetworkSetting(BaseModel):
-    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
-
-    SERVICE_HOST_IP: str
-    SERVICE_HOST_PORT: int
-    USE_PROXY: bool
-    PROXY: str
-
-
-class ServerSetting(BaseModel):
+class BaseSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
     DATABASE_URL: str
     GRAPH_STORE_URL: str
-    LOGGING_LEVEL: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR']
-    INIT_USER: str
-    INIT_PASSWORD: str
     TEMP_DIR: str
-
-    network: ServerNetworkSetting
 
     @model_validator(mode='after')
     def create_temp_dir(self) -> Self:
         os.makedirs(self.TEMP_DIR, exist_ok=True)
 
         return self
+
+
+class AuthSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    INIT_USER: EmailStr
+    INIT_PASSWORD: str
+
+    SECRET_KEY: str = secrets.token_urlsafe(32)
+    ALGORITHM: str = 'HS256'
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+
+
+class LogSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    LOGGING_LEVEL: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR']
+
+
+class NetworkSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    SERVICE_HOST_IP: str
+    SERVICE_HOST_PORT: int
+    USE_PROXY: bool
+    PROXY: str
 
 
 class GrobidSetting(BaseModel):
@@ -76,6 +88,11 @@ class BaseModelSetting(BaseModel):
         return self
 
 
+class RetrieverSetting(BaseModel):
+    embedding: BaseModelSetting
+    reranker: BaseModelSetting
+
+
 class MilvusSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
@@ -96,24 +113,28 @@ class MilvusSetting(BaseModel):
         }
 
 
+class NebulaSetting(BaseModel):
+    model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
+
+    HOST: str
+    PORT: int
+    USERNAME: str
+    PASSWORD: str
+
+
 class KnowledgeBaseSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
     STORE_PATH: str
     DOC_URL: str
     milvus: MilvusSetting
+    nebula: NebulaSetting
 
     @model_validator(mode='after')
     def create_path(self) -> Self:
         os.makedirs(self.STORE_PATH, exist_ok=True)
 
         return self
-
-
-class RetrieverSetting(BaseModel):
-    embedding: BaseModelSetting
-    reranker: BaseModelSetting
-    knowledge_base: KnowledgeBaseSetting
 
 
 class BaseLLMSetting(BaseModel):
@@ -156,13 +177,14 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = 'Academic LLM Chat API'
     VERSION: str = '1.0.0'
 
-    SECRET_KEY: str = secrets.token_urlsafe(32)
-    ALGORITHM: str = 'HS256'
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+    base: BaseSetting
+    auth: AuthSetting
+    log: LogSetting
+    network: NetworkSetting
 
-    server: ServerSetting
     fileloader: FileLoaderSetting
     retriever: RetrieverSetting
+    knowledge_base: KnowledgeBaseSetting
     llm: LLMSetting
     tool: ToolSetting
 

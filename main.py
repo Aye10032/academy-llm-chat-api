@@ -44,8 +44,8 @@ app.include_router(resource.router, prefix='/api/v1/resource', tags=['resource']
 def main() -> None:
     config = uvicorn.Config(
         'main:app',
-        host=get_settings().server.network.SERVICE_HOST_IP,
-        port=get_settings().server.network.SERVICE_HOST_PORT,
+        host=get_settings().network.SERVICE_HOST_IP,
+        port=get_settings().network.SERVICE_HOST_PORT,
         access_log=True,
         workers=1,
     )

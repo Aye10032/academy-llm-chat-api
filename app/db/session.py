@@ -8,7 +8,7 @@ from sqlmodel import Session, SQLModel
 from app.core.config import get_settings
 
 connect_args = {'check_same_thread': False}
-engine = create_engine(get_settings().server.DATABASE_URL, connect_args=connect_args)
+engine = create_engine(get_settings().base.DATABASE_URL, connect_args=connect_args)
 
 
 @logger.catch

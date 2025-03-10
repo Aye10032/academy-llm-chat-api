@@ -44,13 +44,13 @@ loguru_config = {
     'handlers': [
         {
             'sink': sys.stdout,
-            'level': get_settings().server.LOGGING_LEVEL,
+            'level': get_settings().log.LOGGING_LEVEL,
             'format': '<green>{time:HH:mm}</green> | <level>{level}</level> | '
             '<cyan>{module}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>',
         },
         {
             'sink': f'log/runtime_{year}{month:02d}{day:02d}.log',
-            'level': get_settings().server.LOGGING_LEVEL,
+            'level': get_settings().log.LOGGING_LEVEL,
             'rotation': '10 MB',
             'retention': '1 week',
             'encoding': 'utf-8',

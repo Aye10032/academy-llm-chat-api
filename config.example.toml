@@ -1,12 +1,18 @@
-[server]
+[base]
 database_url = "sqlite:///./data/app.db"
 graph_store_url = "sqlite:///./data/graph.db"
-logging_level = "INFO"
-init_user = "admin@example.com"
-init_password = "password"
 temp_dir = "./temp/"
 
-[server.network]
+[auth]
+init_user = "admin@example.com"
+init_password = "password"
+algorithm = "HS256"
+access_token_expire_minutes = 1440
+
+[log]
+logging_level = "INFO"
+
+[network]
 service_host_ip = "127.0.0.1"
 service_host_port = 8000
 use_proxy = true
@@ -35,16 +41,22 @@ fp16 = true
 normalize = true
 device = "cuda"
 
-[retriever.knowledge_base]
+[knowledge_base]
 store_path = "./data/knowledge_base"
 doc_url = "sqlite:///./data/knowledge_base/document.db"
 
-[retriever.knowledge_base.milvus]
+[knowledge_base.milvus]
 uri = "http://127.0.0.1:19530"
 username = ""
 password = ""
 token = ""
 secure = false
+
+[knowledge_base.nebula]
+host = 'localhost'
+port = 9669
+username = "root"
+password = "nebula"
 
 [llm.openai]
 use_proxy = true
@@ -65,7 +77,7 @@ serper_api = ""
 
 [tool.jina]
 jina_api = ""
-use_loacl_model = true
+use_local_model = true
 model = "jinaai/ReaderLM-v2"
 save_local = true
 fp16 = false

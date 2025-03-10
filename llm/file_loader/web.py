@@ -19,7 +19,7 @@ from llm.file_loader.loader import BaseFileLoader
 from llm.schemas import ArticleBlock, MarkdownMeta
 from llm.schemas.markdown import FileSource, SourceType
 
-network_setting = get_settings().server.network
+network_setting = get_settings().network
 
 
 class SimpleWebLoader(BaseFileLoader):

@@ -53,9 +53,9 @@ def init_user(ctx):
     setting = get_settings()
 
     test_user = UserTable(
-        email=setting.server.INIT_USER,
+        email=setting.auth.INIT_USER,
         username='Admin',
-        hashed_password=get_password_hash(setting.server.INIT_PASSWORD),
+        hashed_password=get_password_hash(setting.auth.INIT_PASSWORD),
         is_active=True,
         role=UserRole.ADMIN,
     )
@@ -104,7 +104,7 @@ def init_knowledge_base(ctx, path: str):
     create_db_and_tables()
 
     drop_old = ctx.obj['drop_old']
-    output_path = Path(get_settings().retriever.knowledge_base.STORE_PATH)
+    output_path = Path(get_settings().knowledge_base.STORE_PATH)
     file_path = Path(path)
 
     logger.info(f'覆盖:{drop_old}')
@@ -197,7 +197,7 @@ def init_knowledge_base(ctx, path: str):
             md_loader.save_md(md_file)
 
             # TODO 临时修复zilliz无法处理空值的问题
-            if get_settings().retriever.knowledge_base.milvus.SECURE:
+            if get_settings().knowledge_base.milvus.SECURE:
                 docs = fix_null_fields(docs)
 
             retriever.add_documents(docs)
@@ -235,7 +235,7 @@ def init_knowledge_base(ctx, path: str):
                     loader.save_md(md_file)
 
                     # TODO 临时修复zilliz无法处理空值的问题
-                    if get_settings().retriever.knowledge_base.milvus.SECURE:
+                    if get_settings().knowledge_base.milvus.SECURE:
                         docs = fix_null_fields(docs)
                     retriever.add_documents(docs)
                 except DOINotFoundError:
@@ -258,7 +258,7 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
 
     drop_old = ctx.obj['drop_old']
 
-    root_path = Path(get_settings().retriever.knowledge_base.STORE_PATH) / db_name
+    root_path = Path(get_settings().knowledge_base.STORE_PATH) / db_name
     local_path = Path(root_path) / 'baseline'
 
     if drop_old and local_path.exists():

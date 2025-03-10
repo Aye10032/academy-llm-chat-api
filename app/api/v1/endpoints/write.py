@@ -295,7 +295,7 @@ async def chat(
 
     uploaded_files = []
     if files:
-        file_output_parent = get_settings().server.TEMP_DIR
+        file_output_parent = get_settings().base.TEMP_DIR
         for file in files:
             try:
                 # 生成唯一的文件名

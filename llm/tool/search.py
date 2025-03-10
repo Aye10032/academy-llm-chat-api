@@ -9,8 +9,6 @@ from pydantic import AnyHttpUrl, BaseModel, Field
 
 from app.core.config import get_settings
 
-config = get_settings()
-
 
 class WebSearchInput(BaseModel):
     question: str = Field(description='联网搜索的关键词')
@@ -38,7 +36,7 @@ class WebSearchTool(BaseTool):
     max_search_result: int = 6
 
     def search(self, query: str) -> list[WebSearchResult]:
-        if serper_api := config.tool.search.SERPER_API:
+        if serper_api := get_settings().tool.search.SERPER_API:
             url = 'https://google.serper.dev/search'
 
             payload = json.dumps({'q': query, 'k': self.max_search_result, 'gl': 'us', 'hl': 'en'})
@@ -48,15 +46,15 @@ class WebSearchTool(BaseTool):
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             }
 
-            if config.server.network.USE_PROXY:
+            if get_settings().network.USE_PROXY:
                 response = requests.request(
                     'POST',
                     url,
                     headers=headers,
                     data=payload,
                     proxies={
-                        'http': config.server.network.PROXY,
-                        'https': config.server.network.PROXY,
+                        'http': get_settings().network.PROXY,
+                        'https': get_settings().network.PROXY,
                     },
                     timeout=60,
                 )
@@ -76,8 +74,8 @@ class WebSearchTool(BaseTool):
                 return result_list
         else:
             logger.warning('no serper api found, using ddgs instead')
-            if config.server.network.USE_PROXY:
-                with DDGS(proxy=config.server.network.PROXY) as ddgs:
+            if get_settings().network.USE_PROXY:
+                with DDGS(proxy=get_settings().network.PROXY) as ddgs:
                     search_result = ddgs.text(
                         query,
                         region=self.region,

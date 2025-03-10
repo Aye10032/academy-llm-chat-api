@@ -65,10 +65,10 @@ def get_paper_info(pmid: str, silent: bool = True) -> tuple[list[ArticleBlock], 
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0'
     }
 
-    if get_settings().server.network.USE_PROXY:
+    if get_settings().network.USE_PROXY:
         proxies = {
-            'http': get_settings().server.network.PROXY,
-            'https': get_settings().server.network.PROXY,
+            'http': get_settings().network.PROXY,
+            'https': get_settings().network.PROXY,
         }
         response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
     else:
@@ -139,10 +139,10 @@ def get_info_by_doi(doi: str, silent: bool = True) -> tuple[list[ArticleBlock], 
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0'
     }
 
-    if get_settings().server.network.USE_PROXY:
+    if get_settings().network.USE_PROXY:
         proxies = {
-            'http': get_settings().server.network.PROXY,
-            'https': get_settings().server.network.PROXY,
+            'http': get_settings().network.PROXY,
+            'https': get_settings().network.PROXY,
         }
         response = requests.request('GET', url, headers=headers, proxies=proxies, timeout=10)
     else:
@@ -182,8 +182,8 @@ class GrobidConnector:
         self.session.mount('https://', adapter)
         self.session.headers.update({'Accept': 'application/xml'})
 
-        if get_settings().server.network.USE_PROXY:
-            k, v = get_settings().server.network.PROXY.split('://')
+        if get_settings().network.USE_PROXY:
+            k, v = get_settings().network.PROXY.split('://')
             self.session.proxies.update({k: v})
 
         self._check_server_status()
