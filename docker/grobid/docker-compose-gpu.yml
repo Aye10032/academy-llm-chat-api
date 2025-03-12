@@ -13,7 +13,7 @@ services:
             - driver: nvidia
               capabilities: ["gpu"]
               device_ids: ["0"]
-    restart: on-failure
+    restart: unless-stopped
 
 networks:
   default:

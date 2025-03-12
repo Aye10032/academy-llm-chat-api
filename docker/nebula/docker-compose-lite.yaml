@@ -29,7 +29,7 @@ services:
       - ./logs/meta0:/logs
     networks:
       - nebula-net
-    restart: on-failure
+    restart: unless-stopped
     cap_add:
       - SYS_PTRACE
 
@@ -65,7 +65,7 @@ services:
       - ./logs/storage0:/logs
     networks:
       - nebula-net
-    restart: on-failure
+    restart: unless-stopped
     cap_add:
       - SYS_PTRACE
 
@@ -99,7 +99,7 @@ services:
       - ./logs/graph:/logs
     networks:
       - nebula-net
-    restart: on-failure
+    restart: unless-stopped
     cap_add:
       - SYS_PTRACE
 
