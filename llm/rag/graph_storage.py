@@ -1,5 +1,6 @@
 import time
-from typing import Any
+from datetime import date, datetime
+from typing import Any, Optional
 
 from loguru import logger
 from nebula3.Config import Config as NConfig
@@ -249,7 +250,7 @@ class NebulaGraphStore:
         result = self.client.execute(stmt)
         return result
 
-    def create_edge(
+    def create_edge_type(
         self,
         edge: Edge,
         *,
@@ -299,16 +300,19 @@ class NebulaGraphStore:
         result = self.client.execute(stmt)
         return result
 
-    def drop_edge(self, edge_name: str, *, check_exist: bool = True) -> ResultSet:
-        """
-        删除当前工作空间内的指定 Edge type
-
-        :param edge_name: 要删除的edge名称
-        :param check_exist:
-        :return:
+    def drop_edge_type(self, edge_name: str, *, check_exist: bool = True) -> ResultSet:
+        """删除当前工作空间内的指定 Edge type
 
         DROP EDGE [IF EXISTS] <edge_type_name>;
+
+        Args:
+            edge_name: edge_name: 要删除的edge type名称
+            check_exist:
+
+        Returns:
+            操作结果
         """
+
         stmt = f'DROP EDGE IF EXISTS {edge_name};' if check_exist else f'DROP EDGE {edge_name};'
         result = self.client.execute(stmt)
         return result
@@ -321,8 +325,18 @@ class NebulaGraphStore:
         *,
         check_exist: bool = True,
     ):
-        """
+        """插入点
+
         INSERT VERTEX [IF NOT EXISTS] <tag_name> ([prop_name_list]) VALUES <vid>: ([prop_value_list])
+
+        Args:
+            tag_name: 节点类型名称
+            props: 节点属性值
+            vid: 节点索引名称
+            check_exist:
+
+        Returns:
+            操作结果
         """
         prop_names = props.keys()
         prop_values = props.values()
@@ -332,15 +346,91 @@ class NebulaGraphStore:
         if check_exist:
             stmt_list.append('IF NOT EXISTS')
 
-        stmt_list.append([tag_name, f'({", ".join(prop_names)})'])
+        stmt_list.extend([tag_name, f'({", ".join(prop_names)})'])
 
         if isinstance(vid, str):
-            stmt_list.append(['VALUES', f'"{vid}":'])
+            stmt_list.extend(['VALUES', f'"{vid}":'])
         else:
-            stmt_list.append(['VALUES', f'{vid}:'])
+            stmt_list.extend(['VALUES', f'{vid}:'])
 
-        stmt_list.append(f'({", ".join(prop_values)})')
+        prop_values_strs = []
+        for prop_value in prop_values:
+            if isinstance(prop_value, str):
+                prop_values_strs.append(f'"{prop_value}"')
+            elif isinstance(prop_value, date):
+                prop_values_strs.append(f'date("{prop_value}")')
+            elif isinstance(prop_value, datetime):
+                prop_values_strs.append(f'datetime("{prop_value}")')
+            else:
+                prop_values_strs.append(f'{prop_value}')
+
+        stmt_list.append(f'({", ".join(prop_values_strs)});')
 
         stmt = ' '.join(stmt_list)
+        result = self.client.execute(stmt)
+        return result
+
+    def insert_edge(
+        self,
+        edge_type: str,
+        src_vid: str | int,
+        dst_vid: str | int,
+        props: Optional[dict[str, Any]] = None,
+        rank: int = 0,
+        *,
+        check_exist: bool = True,
+    ):
+        """插入边
+        允许悬挂边（Dangling edge）。因此可以在起点或者终点存在前先写边
+
+        INSERT EDGE [IF NOT EXISTS] <edge_type> ( <prop_name_list> ) VALUES <src_vid> -> <dst_vid>[@<rank>] : ( <prop_value_list> );
+        Args:
+            edge_type: 边关联的 Edge type
+            props: 属性列表
+            src_vid: 起始点 ID
+            dst_vid: 目的点 ID
+            rank: 边的 rank 值
+            check_exist:
+
+        Returns:
+            操作结果
+        """
+
+        if props is None:
+            props = {}
+
+        prop_names = props.keys()
+        prop_values = props.values()
+
+        stmt_list = ['INSERT EDGE']
+
+        if check_exist:
+            stmt_list.append('IF NOT EXISTS')
+
+        stmt_list.extend([edge_type, f'({", ".join(prop_names)})'])
+
+        src_vid_str = f'"{src_vid}"' if isinstance(src_vid, str) else f'{src_vid}'
+        dst_vid_str = f'"{dst_vid}"' if isinstance(dst_vid, str) else f'{dst_vid}'
+
+        if rank:
+            stmt_list.append(f'VALUES {src_vid_str}->{dst_vid_str}@{rank}:')
+        else:
+            stmt_list.append(f'VALUES {src_vid_str}->{dst_vid_str}:')
+
+        prop_values_strs = []
+        for prop_value in prop_values:
+            if isinstance(prop_value, str):
+                prop_values_strs.append(f'"{prop_value}"')
+            elif isinstance(prop_value, date):
+                prop_values_strs.append(f'date("{prop_value}")')
+            elif isinstance(prop_value, datetime):
+                prop_values_strs.append(f'datetime("{prop_value}")')
+            else:
+                prop_values_strs.append(f'{prop_value}')
+
+        stmt_list.append(f'({", ".join(prop_values_strs)});')
+
+        stmt = ' '.join(stmt_list)
+        logger.debug(stmt)
         result = self.client.execute(stmt)
         return result

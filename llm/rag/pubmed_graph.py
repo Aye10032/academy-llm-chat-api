@@ -1,11 +1,20 @@
 from datetime import date
 
+from app.core.config import get_settings
 from llm.rag.graph_storage import NebulaGraphStore
 from llm.schemas.nebula_graph import Edge, Prop, PropType, Tag, VidType
+from llm.schemas.pubmed_data import PubMedData
+
+nebula_cfg = get_settings().knowledge_base.nebula
 
 
 def init_pubmed_graph(drop_old: bool = False):
-    with NebulaGraphStore(address='172.18.19.150') as store:
+    with NebulaGraphStore(
+        address=nebula_cfg.HOST,
+        port=nebula_cfg.PORT,
+        username=nebula_cfg.USERNAME,
+        password=nebula_cfg.PASSWORD,
+    ) as store:
         if drop_old:
             store.drop_space('pubmed', check_exist=True)
 
@@ -97,7 +106,6 @@ def init_pubmed_graph(drop_old: bool = False):
                     Prop[str](
                         prop_name='issn',
                         data_type=PropType.STRING,
-                        not_null=True,
                         comment='期刊ISSN编号',
                     ),
                 ],
@@ -105,19 +113,53 @@ def init_pubmed_graph(drop_old: bool = False):
             check_exist=True,
         )
 
-        store.create_edge(
-            Edge(
-                edge_name='AUTHORED',
-                props=[Prop[int](prop_name='author_order', data_type=PropType.INT8)],
-            ),
-            check_exist=True,
-        )
-        store.create_edge(Edge(edge_name='PUBLISH_ON'), check_exist=True)
-        store.create_edge(Edge(edge_name='HAS_KEYWORD'), check_exist=True)
-        store.create_edge(Edge(edge_name='CITES'), check_exist=True)
+        store.create_edge_type(Edge(edge_name='AUTHORED'), check_exist=True)
+        store.create_edge_type(Edge(edge_name='PUBLISH_ON'), check_exist=True)
+        store.create_edge_type(Edge(edge_name='HAS_KEYWORD'), check_exist=True)
+        store.create_edge_type(Edge(edge_name='CITES'), check_exist=True)
 
 
-def insert_paper(): ...
+def insert_paper(pubmed_data: PubMedData):
+    pubmed_dict = pubmed_data.model_dump()
+    authors: list[dict] = pubmed_dict.pop('author')
+    journal: dict[str, str] = pubmed_dict.pop('journal')
+    keywords: list[str] = pubmed_dict.pop('keywords')
+    references: list[str] = pubmed_dict.pop('references')
+
+    with NebulaGraphStore(
+        address=nebula_cfg.HOST,
+        port=nebula_cfg.PORT,
+        username=nebula_cfg.USERNAME,
+        password=nebula_cfg.PASSWORD,
+    ) as store:
+        store.use_space('pubmed')
+
+        result = store.insert_vertex('Paper', pubmed_dict, pubmed_data.pmid)
+        assert result.is_succeeded(), result.error_msg()
+
+        for index, author in enumerate(authors):
+            result = store.insert_vertex('Author', author, author['name'])
+            assert result.is_succeeded(), result.error_msg()
+            result = store.insert_edge(
+                'AUTHORED', author['name'], pubmed_data.pmid, rank=(index + 1)
+            )
+            assert result.is_succeeded(), result.error_msg()
+
+        if journal:
+            result = store.insert_vertex('Journal', journal, journal['name'])
+            assert result.is_succeeded(), result.error_msg()
+            result = store.insert_edge('PUBLISH_ON', pubmed_data.pmid, journal['name'])
+            assert result.is_succeeded(), result.error_msg()
+
+        for keyword in keywords:
+            result = store.insert_vertex('Keyword', {'text': keyword}, keyword)
+            assert result.is_succeeded(), result.error_msg()
+            result = store.insert_edge('HAS_KEYWORD', pubmed_data.pmid, keyword)
+            assert result.is_succeeded(), result.error_msg()
+
+        for reference in references:
+            result = store.insert_edge('CITES', pubmed_data.pmid, reference)
+            assert result.is_succeeded(), result.error_msg()
 
 
 if __name__ == '__main__':

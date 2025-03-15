@@ -1,18 +1,24 @@
 import gzip
 import xml.etree.ElementTree as ET
 from datetime import date
-from typing import Any
+from pathlib import Path
 
 from loguru import logger
-from pydantic import AnyHttpUrl, FilePath
+from pydantic import AnyHttpUrl, FilePath, ValidationError
+from tqdm import tqdm
+
+from llm.schemas.pubmed_data import PubMedData
 
 
-def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict[str, Any]]:
+def pubmed_xml_loader(
+    origin_file_path: FilePath | AnyHttpUrl, tqdm_position: int = 0
+) -> dict[str, PubMedData]:
     """
     从PubMed XML文件中提取文章信息
 
     Args:
         origin_file_path: PubMed XML文件路径（通常是.gz压缩文件）
+        tqdm_position: 用于多进程时控制进度条位置
 
     Returns:
         dict: 包含提取信息的字典
@@ -26,6 +32,12 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
             event, root = next(context)
 
             last_date = date(1970, 1, 1)
+            bar = tqdm(
+                total=30000,
+                desc=f'解析 {Path(origin_file_path).name}',
+                position=tqdm_position,
+                leave=False,
+            )
 
             for event, element in context:
                 if event == 'end' and element.tag == 'PubmedArticle':
@@ -39,7 +51,7 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
                     # 提取文章标题
                     title_elem = element.find('.//ArticleTitle')
                     if title_elem is not None:
-                        article_data['title'] = title_elem.text
+                        article_data['title'] = ''.join(title_elem.itertext())
 
                     # 提取发表日期
                     pub_date_elem = element.find('.//DateCompleted')
@@ -73,6 +85,8 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
                             author_name = f'{fore_name.text} {last_name.text}'
                         elif last_name is not None:
                             author_name = last_name.text
+                        else:
+                            continue
                         author_data['name'] = author_name
 
                         affiliation_elem = author.find('./AffiliationInfo/Affiliation')
@@ -84,9 +98,11 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
 
                     # 提取期刊名称和ISSN编号
                     journal_data = {}
-                    journal_title = element.find('.//Journal/Title')
-                    if journal_title is not None:
-                        journal_data['name'] = journal_title.text
+                    journal_title_elem = element.find('.//Journal/ISOAbbreviation')
+                    if journal_title_elem is None:
+                        journal_title_elem = element.find('.//Journal/Title')
+                    if journal_title_elem is not None:
+                        journal_data['name'] = journal_title_elem.text
 
                     issn_elem = element.find('.//Journal/ISSN[@IssnType="Print"]')
                     if issn_elem is not None:
@@ -160,20 +176,24 @@ def pubmed_xml_loader(origin_file_path: FilePath | AnyHttpUrl) -> dict[str, dict
                     article_data['reference_num'] = ref_num
 
                     article_id = article_data['pmid']
-                    result[article_id] = article_data
+                    result[article_id] = PubMedData.model_validate(article_data, strict=True)
 
                     root.clear()
+                    bar.update(1)
 
             return result
 
+    except ValidationError:
+        logger.exception(f'PubMed 数据类型校验错误: {article_data["pmid"]}')
+        raise
     except Exception as e:
-        logger.error(f'解析PubMed文件时出错: {str(e)}')
+        logger.exception(f'解析PubMed文件时出错: {str(e)}')
         raise
 
 
 if __name__ == '__main__':
     for k, v in pubmed_xml_loader('../../test/pubmed25n1274.xml.gz').items():
         print(k)
-        for sk, sv in v.items():
-            print(f'{sk}: {sv}')
+        print(v.model_dump())
+        print(str(v.pub_date))
         break
