@@ -120,12 +120,6 @@ def init_pubmed_graph(drop_old: bool = False):
 
 
 def insert_paper(pubmed_data: PubMedData):
-    pubmed_dict = pubmed_data.model_dump()
-    authors: list[dict] = pubmed_dict.pop('author')
-    journal: dict[str, str] = pubmed_dict.pop('journal')
-    keywords: list[str] = pubmed_dict.pop('keywords')
-    references: list[str] = pubmed_dict.pop('references')
-
     with NebulaGraphStore(
         address=nebula_cfg.HOST,
         port=nebula_cfg.PORT,
@@ -134,32 +128,25 @@ def insert_paper(pubmed_data: PubMedData):
     ) as store:
         store.use_space('pubmed')
 
-        result = store.insert_vertex('Paper', pubmed_dict, pubmed_data.pmid)
-        assert result.is_succeeded(), result.error_msg()
+        pubmed_dict = pubmed_data.model_dump(
+            exclude={'author', 'journal', 'keywords', 'references'}, exclude_none=True
+        )
+        store.insert_vertex('Paper', pubmed_dict, pubmed_data.pmid)
 
-        for index, author in enumerate(authors):
-            result = store.insert_vertex('Author', author, author['name'])
-            assert result.is_succeeded(), result.error_msg()
-            result = store.insert_edge(
-                'AUTHORED', author['name'], pubmed_data.pmid, rank=(index + 1)
-            )
-            assert result.is_succeeded(), result.error_msg()
+        for index, author in enumerate(pubmed_data.author):
+            store.insert_vertex('Author', author.model_dump(exclude_none=True), author.name)
+            store.insert_edge('AUTHORED', author.name, pubmed_data.pmid, rank=(index + 1))
 
-        if journal:
-            result = store.insert_vertex('Journal', journal, journal['name'])
-            assert result.is_succeeded(), result.error_msg()
-            result = store.insert_edge('PUBLISH_ON', pubmed_data.pmid, journal['name'])
-            assert result.is_succeeded(), result.error_msg()
+        if journal := pubmed_data.journal:
+            store.insert_vertex('Journal', journal.model_dump(exclude_none=True), journal.name)
+            store.insert_edge('PUBLISH_ON', pubmed_data.pmid, journal.name)
 
-        for keyword in keywords:
-            result = store.insert_vertex('Keyword', {'text': keyword}, keyword)
-            assert result.is_succeeded(), result.error_msg()
-            result = store.insert_edge('HAS_KEYWORD', pubmed_data.pmid, keyword)
-            assert result.is_succeeded(), result.error_msg()
+        for keyword in pubmed_data.keywords:
+            store.insert_vertex('Keyword', {'text': keyword}, keyword)
+            store.insert_edge('HAS_KEYWORD', pubmed_data.pmid, keyword)
 
-        for reference in references:
-            result = store.insert_edge('CITES', pubmed_data.pmid, reference)
-            assert result.is_succeeded(), result.error_msg()
+        for reference in pubmed_data.references:
+            store.insert_edge('CITES', pubmed_data.pmid, reference)
 
 
 if __name__ == '__main__':

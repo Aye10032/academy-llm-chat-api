@@ -13,22 +13,22 @@ from tqdm.asyncio import tqdm
 from urllib3.exceptions import ResponseError
 
 import app.crud.knowledge_base as kb_crud
-import app.crud.pubmed as pm_crud
 import app.crud.user as user_crud
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.db.session import create_db_and_tables, drop_table, get_simple_session
-from app.models import KnowledgeBaseTable, PubMedPaperTable, PubMedReferenceTable, UserTable
+from app.db.session import create_db_and_tables, get_simple_session
+from app.models import KnowledgeBaseTable, UserTable
 from app.schemas.knowledge_base import KnowledgeBaseUpdate
 from app.schemas.user import UserRole
 from app.utils.ftp import FTPClient, download_http_files
 from app.utils.md5 import verify_md5
 from app.utils.validator import simple_char_valid, validate_input
 from llm.core.model import load_embedding
-from llm.file_loader import MarkdownLoader
 from llm.file_loader.loader import FileLoadError
+from llm.file_loader.markdown import MarkdownLoader
 from llm.file_loader.pdf import DOINotFoundError, GrobidConnector, PdfLoader
 from llm.file_loader.pubmed import pubmed_xml_loader
+from llm.rag.pubmed_graph import init_pubmed_graph, insert_paper
 from llm.rag.retriever import insert_chain
 from llm.rag.storage import create_vector_db, fix_null_fields, get_doc_db, get_vector_db
 from llm.schemas.markdown import FileSource, SourceType
@@ -266,6 +266,7 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
 
     local_path.mkdir(parents=True, exist_ok=True)
 
+    # 获取远端文件列表
     with FTPClient(host='ftp.ncbi.nlm.nih.gov', username='anonymous', password='') as ftp:
         files = ftp.list_files('/pubmed/baseline')
 
@@ -283,7 +284,7 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
     else:
         download_files = files
 
-    async def download_example():
+    async def download_func():
         await download_http_files(
             base_url='https://ftp.ncbi.nlm.nih.gov',
             remote_path='/pubmed/baseline',
@@ -293,9 +294,9 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
         )
 
     if download_files:
-        asyncio.run(download_example())
+        asyncio.run(download_func())
 
-    # check MD5
+    # 校验 MD5
     gz_list = list(local_path.glob('*.gz'))
     fail_count = 0
     for gz_file in tqdm(gz_list, total=len(gz_list), desc='MD5校验'):
@@ -316,9 +317,7 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
     now_time = datetime.now()
     if drop_old:
         kb_crud.delete_by_name(session, db_name)
-        drop_table(PubMedPaperTable.__tablename__)
-        drop_table(PubMedReferenceTable.__tablename__)
-        create_db_and_tables()
+        init_pubmed_graph(True)
 
     embedding_model = load_embedding()
     if now_kb := kb_crud.get_by_name(session, db_name):
@@ -347,44 +346,46 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
             drop_old=drop_old,
         )
 
+        logger.info('初始化图数据库...')
+        init_pubmed_graph(False)
+
     doc_db = get_doc_db(db_name, drop_old=drop_old)
     retriever = insert_chain(vector_db, doc_db, 'en')
 
-    for gz_file in tqdm(gz_list, total=len(gz_list), desc='解析归档文件'):
-        # for gz_file in gz_list:
-        result = pubmed_xml_loader(gz_file)
+    for gz_file in tqdm(gz_list, total=len(gz_list), desc='解析归档文件', position=0):
+        result = pubmed_xml_loader(gz_file, 1)
         doc_list = []
-        for pmid, v in result.items():
-            reference = v.pop('references')
+        for pmid, pubmed_data in tqdm(
+            result.items(), total=len(result.items()), desc='建立图索引', position=1
+        ):
+            insert_paper(pubmed_data)
+
             file_uid = str(uuid4())
 
-            paper_table = PubMedPaperTable.model_validate(v)
-            ref_list = [PubMedReferenceTable(origin=pmid, cite=cite_id) for cite_id in reference]
-
-            pm_crud.insert(session, paper_table, ref_list)
-
-            if 'abstract' in v:
+            if pubmed_data.abstract:
+                first_author = pubmed_data.author[0].name if pubmed_data.author else 'unknown'
                 source = [
                     FileSource(
                         source_url=f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/',
                         source_type=SourceType.PUBMED,
                     )
                 ]
-                if 'doi' in v:
+                if pubmed_data.doi:
                     source.extend(
                         [
                             FileSource(
-                                source_url=f'https://doi.org/{v["doi"]}', source_type=SourceType.WEB
+                                source_url=f'https://doi.org/{pubmed_data.doi}',
+                                source_type=SourceType.WEB,
                             )
                         ]
                     )
                 abstract_doc = Document(
-                    page_content=v['abstract'],
+                    page_content=pubmed_data.abstract,
                     metadata={
-                        'title': v['title'],
+                        'title': pubmed_data.title,
                         'section': 'Abstract',
-                        'author': v['author'],
-                        'year': v['year'],
+                        'author': first_author,
+                        'year': pubmed_data.pub_date.year,
                         'type': 'abstract',
                         'source': source,
                         'file_id': file_uid,

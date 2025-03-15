@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import date, datetime
 from typing import Any, Optional
@@ -323,7 +324,7 @@ class NebulaGraphStore:
         props: dict[str, Any],
         vid: str | int,
         *,
-        check_exist: bool = True,
+        check_exist: bool = False,
     ):
         """插入点
 
@@ -356,7 +357,7 @@ class NebulaGraphStore:
         prop_values_strs = []
         for prop_value in prop_values:
             if isinstance(prop_value, str):
-                prop_values_strs.append(f'"{prop_value}"')
+                prop_values_strs.append(json.dumps(prop_value))
             elif isinstance(prop_value, date):
                 prop_values_strs.append(f'date("{prop_value}")')
             elif isinstance(prop_value, datetime):
@@ -368,6 +369,7 @@ class NebulaGraphStore:
 
         stmt = ' '.join(stmt_list)
         result = self.client.execute(stmt)
+        assert result.is_succeeded(), f'{result.error_msg()} - {stmt}'
         return result
 
     def insert_edge(
@@ -378,7 +380,7 @@ class NebulaGraphStore:
         props: Optional[dict[str, Any]] = None,
         rank: int = 0,
         *,
-        check_exist: bool = True,
+        check_exist: bool = False,
     ):
         """插入边
         允许悬挂边（Dangling edge）。因此可以在起点或者终点存在前先写边
@@ -420,7 +422,7 @@ class NebulaGraphStore:
         prop_values_strs = []
         for prop_value in prop_values:
             if isinstance(prop_value, str):
-                prop_values_strs.append(f'"{prop_value}"')
+                prop_values_strs.append(json.dumps(prop_value))
             elif isinstance(prop_value, date):
                 prop_values_strs.append(f'date("{prop_value}")')
             elif isinstance(prop_value, datetime):
@@ -431,6 +433,6 @@ class NebulaGraphStore:
         stmt_list.append(f'({", ".join(prop_values_strs)});')
 
         stmt = ' '.join(stmt_list)
-        logger.debug(stmt)
         result = self.client.execute(stmt)
+        assert result.is_succeeded(), f'{result.error_msg()} - {stmt}'
         return result

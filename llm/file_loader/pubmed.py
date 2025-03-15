@@ -46,12 +46,12 @@ def pubmed_xml_loader(
                     # 提取PMID
                     pmid_elem = element.find('.//PMID')
                     if pmid_elem is not None:
-                        article_data['pmid'] = pmid_elem.text
+                        article_data['pmid'] = pmid_elem.text.strip()
 
                     # 提取文章标题
                     title_elem = element.find('.//ArticleTitle')
                     if title_elem is not None:
-                        article_data['title'] = ''.join(title_elem.itertext())
+                        article_data['title'] = (''.join(title_elem.itertext())).strip()
 
                     # 提取发表日期
                     pub_date_elem = element.find('.//DateCompleted')
@@ -82,16 +82,16 @@ def pubmed_xml_loader(
                         last_name = author.find('LastName')
                         fore_name = author.find('ForeName')
                         if last_name is not None and fore_name is not None:
-                            author_name = f'{fore_name.text} {last_name.text}'
+                            author_name = f'{fore_name.text} {last_name.text}'.strip()
                         elif last_name is not None:
-                            author_name = last_name.text
+                            author_name = last_name.text.strip()
                         else:
                             continue
                         author_data['name'] = author_name
 
                         affiliation_elem = author.find('./AffiliationInfo/Affiliation')
                         if affiliation_elem is not None:
-                            author_data['affiliation'] = affiliation_elem.text
+                            author_data['affiliation'] = affiliation_elem.text.strip()
 
                         authors.append(author_data)
                     article_data['author'] = authors
@@ -102,22 +102,22 @@ def pubmed_xml_loader(
                     if journal_title_elem is None:
                         journal_title_elem = element.find('.//Journal/Title')
                     if journal_title_elem is not None:
-                        journal_data['name'] = journal_title_elem.text
+                        journal_data['name'] = journal_title_elem.text.strip()
 
                     issn_elem = element.find('.//Journal/ISSN[@IssnType="Print"]')
                     if issn_elem is not None:
-                        journal_data['issn'] = issn_elem.text
+                        journal_data['issn'] = issn_elem.text.strip()
                     else:
                         # 如果没有Print类型的ISSN，尝试获取任何类型的ISSN
                         issn_elem = element.find('.//Journal/ISSN')
                         if issn_elem is not None:
-                            journal_data['issn'] = issn_elem.text
+                            journal_data['issn'] = issn_elem.text.strip()
                     article_data['journal'] = journal_data
 
                     # 提取DOI号
                     doi = element.find(".//ELocationID[@EIdType='doi']")
                     if doi is not None:
-                        article_data['doi'] = doi.text
+                        article_data['doi'] = doi.text.strip()
 
                     # 提取摘要
                     abstract_elem = element.find('.//Abstract')
@@ -157,8 +157,8 @@ def pubmed_xml_loader(
                     keywords = []
                     keyword_list = element.findall('.//KeywordList/Keyword')
                     for keyword in keyword_list:
-                        if keyword is not None and keyword.text:
-                            keywords.append(keyword.text)
+                        if keyword is not None and keyword.text and len(keyword.text) <= 50:
+                            keywords.append(keyword.text.replace('\n', ' ').strip())
                     article_data['keywords'] = keywords if keywords else []
 
                     # 提取引用列表（只提取有PubMed ID的引用）
@@ -167,7 +167,7 @@ def pubmed_xml_loader(
                     for reference in reference_list:
                         pubmed_id = reference.find('./ArticleIdList/ArticleId[@IdType="pubmed"]')
                         if pubmed_id is not None and pubmed_id.text:
-                            references.append(pubmed_id.text)
+                            references.append(pubmed_id.text.strip())
                     article_data['references'] = references if references else []
 
                     # 提取引用数
