@@ -1,4 +1,5 @@
 import asyncio
+import json
 import shutil
 import sys
 import time
@@ -347,20 +348,24 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
         )
 
         logger.info('初始化图数据库...')
-        init_pubmed_graph(False)
+        init_pubmed_graph(True)
+        time.sleep(10)
 
     doc_db = get_doc_db(db_name, drop_old=drop_old)
     retriever = insert_chain(vector_db, doc_db, 'en')
 
     for gz_file in tqdm(gz_list, total=len(gz_list), desc='解析归档文件', position=0):
         result = pubmed_xml_loader(gz_file, 1)
-        doc_list = []
         for pmid, pubmed_data in tqdm(
             result.items(), total=len(result.items()), desc='建立图索引', position=1
         ):
-            insert_paper(pubmed_data)
-
             file_uid = str(uuid4())
+            pubmed_data.vector_db_uid = file_uid
+
+            try:
+                insert_paper(pubmed_data)
+            except AssertionError:
+                logger.exception(pubmed_data.pmid)
 
             if pubmed_data.abstract:
                 first_author = pubmed_data.author[0].name if pubmed_data.author else 'unknown'
@@ -368,7 +373,7 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
                     FileSource(
                         source_url=f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/',
                         source_type=SourceType.PUBMED,
-                    )
+                    ).model_dump()
                 ]
                 if pubmed_data.doi:
                     source.extend(
@@ -376,7 +381,7 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
                             FileSource(
                                 source_url=f'https://doi.org/{pubmed_data.doi}',
                                 source_type=SourceType.WEB,
-                            )
+                            ).model_dump()
                         ]
                     )
                 abstract_doc = Document(
@@ -387,14 +392,12 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
                         'author': first_author,
                         'year': pubmed_data.pub_date.year,
                         'type': 'abstract',
-                        'source': source,
+                        'source': json.dumps(source),
                         'file_id': file_uid,
+                        'has_full_text': False,
                     },
                 )
-                doc_list.append(abstract_doc)
-
-        retriever.add_documents(doc_list)
-        doc_list.clear()
+                retriever.add_documents([abstract_doc])
 
 
 if __name__ == '__main__':

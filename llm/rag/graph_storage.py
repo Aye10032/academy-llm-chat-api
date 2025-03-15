@@ -347,25 +347,9 @@ class NebulaGraphStore:
         if check_exist:
             stmt_list.append('IF NOT EXISTS')
 
-        stmt_list.extend([tag_name, f'({", ".join(prop_names)})'])
+        stmt_list.extend([tag_name, f'({", ".join(prop_names)})', 'VALUES', f'{json.dumps(vid)}:'])
 
-        if isinstance(vid, str):
-            stmt_list.extend(['VALUES', f'"{vid}":'])
-        else:
-            stmt_list.extend(['VALUES', f'{vid}:'])
-
-        prop_values_strs = []
-        for prop_value in prop_values:
-            if isinstance(prop_value, str):
-                prop_values_strs.append(json.dumps(prop_value))
-            elif isinstance(prop_value, date):
-                prop_values_strs.append(f'date("{prop_value}")')
-            elif isinstance(prop_value, datetime):
-                prop_values_strs.append(f'datetime("{prop_value}")')
-            else:
-                prop_values_strs.append(f'{prop_value}')
-
-        stmt_list.append(f'({", ".join(prop_values_strs)});')
+        stmt_list.append(f'({get_prop_str(prop_values)});')
 
         stmt = ' '.join(stmt_list)
         result = self.client.execute(stmt)
@@ -411,28 +395,29 @@ class NebulaGraphStore:
 
         stmt_list.extend([edge_type, f'({", ".join(prop_names)})'])
 
-        src_vid_str = f'"{src_vid}"' if isinstance(src_vid, str) else f'{src_vid}'
-        dst_vid_str = f'"{dst_vid}"' if isinstance(dst_vid, str) else f'{dst_vid}'
+        src_vid_str = json.dumps(src_vid)
+        dst_vid_str = json.dumps(dst_vid)
 
         if rank:
             stmt_list.append(f'VALUES {src_vid_str}->{dst_vid_str}@{rank}:')
         else:
             stmt_list.append(f'VALUES {src_vid_str}->{dst_vid_str}:')
 
-        prop_values_strs = []
-        for prop_value in prop_values:
-            if isinstance(prop_value, str):
-                prop_values_strs.append(json.dumps(prop_value))
-            elif isinstance(prop_value, date):
-                prop_values_strs.append(f'date("{prop_value}")')
-            elif isinstance(prop_value, datetime):
-                prop_values_strs.append(f'datetime("{prop_value}")')
-            else:
-                prop_values_strs.append(f'{prop_value}')
-
-        stmt_list.append(f'({", ".join(prop_values_strs)});')
+        stmt_list.append(f'({get_prop_str(prop_values)});')
 
         stmt = ' '.join(stmt_list)
         result = self.client.execute(stmt)
         assert result.is_succeeded(), f'{result.error_msg()} - {stmt}'
         return result
+
+
+def get_prop_str(prop_values) -> str:
+    prop_values_strs = []
+    for prop_value in prop_values:
+        if isinstance(prop_value, date):
+            prop_values_strs.append(f'date("{prop_value}")')
+        elif isinstance(prop_value, datetime):
+            prop_values_strs.append(f'datetime("{prop_value}")')
+        else:
+            prop_values_strs.append(json.dumps(prop_value))
+    return ', '.join(prop_values_strs)

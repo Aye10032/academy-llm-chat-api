@@ -53,6 +53,13 @@ def init_pubmed_graph(drop_old: bool = False):
                         prop_name='reference_num',
                         data_type=PropType.INT64,
                         comment='文献的被引次数',
+                        default=0,
+                    ),
+                    Prop[bool](
+                        prop_name='vector_db_uid',
+                        data_type=PropType.STRING,
+                        comment='在向量数据库中的索引UID',
+                        not_null=True,
                     ),
                 ],
             ),

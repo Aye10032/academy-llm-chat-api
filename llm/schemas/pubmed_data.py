@@ -25,3 +25,4 @@ class PubMedData(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
     reference_num: int = 0
+    vector_db_uid: Optional[str] = None
