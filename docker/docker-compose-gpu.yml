@@ -1,10 +1,81 @@
-version: '3.4'
+version: '3.5'
 services:
+  # milvus
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.16
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/milvus/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: [ "CMD", "etcdctl", "endpoint", "health" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - milvus-net
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/milvus/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - milvus-net
+
+  standalone:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.5.3-gpu
+    command: [ "milvus", "run", "standalone" ]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/milvus/milvus:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [ "gpu" ]
+              device_ids: [ "0" ]
+    depends_on:
+      - "etcd"
+      - "minio"
+    restart: unless-stopped
+    networks:
+      - milvus-net
+
+  # nebula graph
   metad0:
     image: docker.io/vesoft/nebula-metad:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --local_ip=metad0
@@ -26,8 +97,8 @@ services:
       - "19559"
       - "19560"
     volumes:
-      - ./data/meta0:/data/meta
-      - ./logs/meta0:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/data/meta0:/data/meta
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/meta0:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -38,7 +109,7 @@ services:
     image: docker.io/vesoft/nebula-metad:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --local_ip=metad1
@@ -60,8 +131,8 @@ services:
       - "19559"
       - "19560"
     volumes:
-      - ./data/meta1:/data/meta
-      - ./logs/meta1:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/data/meta1:/data/meta
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/meta1:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -72,7 +143,7 @@ services:
     image: docker.io/vesoft/nebula-metad:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --local_ip=metad2
@@ -94,8 +165,8 @@ services:
       - "19559"
       - "19560"
     volumes:
-      - ./data/meta2:/data/meta
-      - ./logs/meta2:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/data/meta2:/data/meta
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/meta2:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -106,7 +177,7 @@ services:
     image: docker.io/vesoft/nebula-storaged:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --local_ip=storaged0
@@ -132,8 +203,8 @@ services:
       - "19779"
       - "19780"
     volumes:
-      - ./data/storage0:/data/storage
-      - ./logs/storage0:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/data/storage0:/data/storage
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/storage0:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -144,7 +215,7 @@ services:
     image: docker.io/vesoft/nebula-storaged:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --local_ip=storaged1
@@ -170,8 +241,8 @@ services:
       - "19779"
       - "19780"
     volumes:
-      - ./data/storage1:/data/storage
-      - ./logs/storage1:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/data/storage1:/data/storage
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/storage1:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -182,7 +253,7 @@ services:
     image: docker.io/vesoft/nebula-storaged:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --local_ip=storaged2
@@ -208,8 +279,8 @@ services:
       - "19779"
       - "19780"
     volumes:
-      - ./data/storage2:/data/storage
-      - ./logs/storage2:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/data/storage2:/data/storage
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/storage2:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -220,7 +291,7 @@ services:
     image: docker.io/vesoft/nebula-graphd:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --port=9669
@@ -245,7 +316,7 @@ services:
       - "19669"
       - "19670"
     volumes:
-      - ./logs/graph:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/graph:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -256,7 +327,7 @@ services:
     image: docker.io/vesoft/nebula-graphd:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --port=9669
@@ -281,7 +352,7 @@ services:
       - "19669"
       - "19670"
     volumes:
-      - ./logs/graph1:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/graph1:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -292,7 +363,7 @@ services:
     image: docker.io/vesoft/nebula-graphd:v3.8.0
     environment:
       USER: root
-      TZ: "${TZ}"
+      TZ: Asia/Shanghai
     command:
       - --meta_server_addrs=metad0:9559,metad1:9559,metad2:9559
       - --port=9669
@@ -317,7 +388,7 @@ services:
       - "19669"
       - "19670"
     volumes:
-      - ./logs/graph2:/logs
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/nebula/logs/graph2:/logs
     networks:
       - nebula-net
     restart: unless-stopped
@@ -346,5 +417,28 @@ services:
       - nebula-net
     restart: unless-stopped
 
+  # postgres
+  postgres-db:
+    image: postgres
+    shm_size: 2gb
+    environment:
+      TZ: Asia/Shanghai
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: postgres
+    ports:
+      - "15432:15432"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/postgres:/var/lib/postgresql/data:rw
+    networks:
+      - postgres-net
+    restart: unless-stopped
+
 networks:
+  milvus-net:
+    name: milvus
   nebula-net:
+    name: nebula
+  postgres-net:
+    name: postgres
