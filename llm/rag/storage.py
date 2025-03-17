@@ -12,7 +12,8 @@ from langchain_milvus.vectorstores import milvus
 from loguru import logger
 from pymilvus import DataType, MilvusClient
 from pymilvus.orm.types import infer_dtype_bydata
-from sqlalchemy import Engine, MetaData, create_engine
+from sqlalchemy import Engine, MetaData, create_engine, Column
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import Field, Session, SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -211,7 +212,7 @@ def create_document_model(table_name: str, self_metadata: MetaData):
         metadata = self_metadata
 
         doc_id: str = Field(primary_key=True)
-        content: dict
+        content: dict = Field(sa_column=Column(JSON))
 
     return DocumentModel
 
@@ -271,11 +272,7 @@ class SQLStore(BaseStore[str, Document]):
                 await session.run_sync(SQLModel.metadata.create_all)
 
     def drop(self) -> None:
-        metadata = MetaData()
-        metadata.reflect(bind=self.engine)
-        table = metadata.tables[self.table_name]
-        if table is not None:
-            SQLModel.metadata.drop_all(self.engine, [table])
+        self.document_model.__table__.drop(self.engine, checkfirst=True)
 
     async def amget(self, keys: Sequence[str]) -> list[Optional[Document]]:
         async with AsyncSession(self.engine) as session:
