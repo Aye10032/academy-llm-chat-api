@@ -253,17 +253,18 @@ def init_knowledge_base(ctx, path: str):
 @cli.command(name='pubmed', help='初始化PubMed data知识库')
 @click.option('--concurrency', '-c', type=int, default=1, help='最大并发数')
 @click.option('--db_name', '-n', type=str, default='pubmed', help='数据库名称，默认为pubmed')
+@click.option('--download_path', type=str, default='', help='pubmed data数据下载解压路径')
 @click.pass_context
-def init_pubmed_db(ctx, concurrency: int, db_name: str):
+def init_pubmed_db(ctx, concurrency: int, db_name: str, download_path: str):
     create_db_and_tables()
 
     drop_old = ctx.obj['drop_old']
 
     root_path = Path(get_settings().knowledge_base.STORE_PATH) / db_name
-    local_path = Path(root_path) / 'baseline'
-
-    if drop_old and local_path.exists():
-        shutil.rmtree(local_path)
+    if download_path:
+        local_path = Path(download_path)
+    else:
+        local_path = Path(root_path) / 'baseline'
 
     local_path.mkdir(parents=True, exist_ok=True)
 
@@ -280,21 +281,18 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
             else:
                 exist_files.append(file_path.name)
 
-    if not drop_old and exist_files:
-        download_files = list(set(files) - set(exist_files))
-    else:
-        download_files = files
+    missed_files = list(set(files) - set(exist_files))
 
     async def download_func():
         await download_http_files(
             base_url='https://ftp.ncbi.nlm.nih.gov',
             remote_path='/pubmed/baseline',
-            file_list=download_files,
+            file_list=missed_files,
             local_dir=local_path,
             max_concurrency=concurrency,
         )
 
-    if download_files:
+    if missed_files:
         asyncio.run(download_func())
 
     # 校验 MD5
@@ -318,7 +316,8 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
     now_time = datetime.now()
     if drop_old:
         kb_crud.delete_by_name(session, db_name)
-        init_pubmed_graph(True)
+        logger.info('初始化图数据库...')
+        init_pubmed_graph(space_name=db_name, drop_old=True)
 
     embedding_model = load_embedding()
     if now_kb := kb_crud.get_by_name(session, db_name):
@@ -347,17 +346,17 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str):
             drop_old=drop_old,
         )
 
-        logger.info('初始化图数据库...')
-        init_pubmed_graph(True)
-        time.sleep(10)
-
     doc_db = get_doc_db(db_name, drop_old=drop_old)
     retriever = insert_chain(vector_db, doc_db, 'en')
 
     for gz_file in tqdm(gz_list, total=len(gz_list), desc='解析归档文件', position=0):
         result = pubmed_xml_loader(gz_file, 1)
         for pmid, pubmed_data in tqdm(
-            result.items(), total=len(result.items()), desc='建立图索引', position=1
+            result.items(),
+            total=len(result.items()),
+            desc='建立图索引',
+            position=1,
+            leave=False,
         ):
             file_uid = str(uuid4())
             pubmed_data.vector_db_uid = file_uid
