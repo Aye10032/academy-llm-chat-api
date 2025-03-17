@@ -27,6 +27,7 @@ dependencies = [
     "pyppeteer>=2.0.0",
     "python-multipart>=0.0.20",
     "rich>=13.9.4",
+    "sqlalchemy-utils>=0.41.2",
     "sqlmodel>=0.0.22",
     "torch>=2.6.0",
     "transformers>=4.48.3",

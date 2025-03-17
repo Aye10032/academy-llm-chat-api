@@ -1,7 +1,7 @@
 import sqlite3
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Iterator, Optional, Sequence, Union, AsyncIterator
+from typing import Any, AsyncIterator, Iterator, Optional, Sequence, Union
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -14,7 +14,7 @@ from pymilvus import DataType, MilvusClient
 from pymilvus.orm.types import infer_dtype_bydata
 from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlmodel import Session, SQLModel, Field, select, col
+from sqlmodel import Field, Session, SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
