@@ -8,7 +8,7 @@ from llm.schemas.pubmed_data import PubMedData
 nebula_cfg = get_settings().knowledge_base.nebula
 
 
-def init_pubmed_graph(drop_old: bool = False):
+def init_pubmed_graph(space_name: str = 'pubmed', drop_old: bool = False):
     with NebulaGraphStore(
         address=nebula_cfg.HOST,
         port=nebula_cfg.PORT,
@@ -16,12 +16,12 @@ def init_pubmed_graph(drop_old: bool = False):
         password=nebula_cfg.PASSWORD,
     ) as store:
         if drop_old:
-            store.drop_space('pubmed', check_exist=True)
+            store.drop_space(space_name, check_exist=True)
 
-        result = store.create_space('pubmed', vid_type=VidType.STRING255)
+        result = store.create_space(space_name, vid_type=VidType.STRING255)
         assert result.is_succeeded(), result.error_msg()
 
-        store.use_space('pubmed')
+        store.use_space(space_name)
 
         store.create_tag(
             Tag(
@@ -126,14 +126,14 @@ def init_pubmed_graph(drop_old: bool = False):
         store.create_edge_type(Edge(edge_name='CITES'), check_exist=True)
 
 
-def insert_paper(pubmed_data: PubMedData):
+def insert_paper(pubmed_data: PubMedData, *, space_name: str = 'pubmed'):
     with NebulaGraphStore(
         address=nebula_cfg.HOST,
         port=nebula_cfg.PORT,
         username=nebula_cfg.USERNAME,
         password=nebula_cfg.PASSWORD,
     ) as store:
-        store.use_space('pubmed')
+        store.use_space(space_name)
 
         pubmed_dict = pubmed_data.model_dump(
             exclude={'author', 'journal', 'keywords', 'references'}, exclude_none=True
@@ -154,7 +154,3 @@ def insert_paper(pubmed_data: PubMedData):
 
         for reference in pubmed_data.references:
             store.insert_edge('CITES', pubmed_data.pmid, reference)
-
-
-if __name__ == '__main__':
-    init_pubmed_graph(True)
