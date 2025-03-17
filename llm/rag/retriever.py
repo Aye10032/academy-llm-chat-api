@@ -168,11 +168,11 @@ def insert_chain(
 
     if language == 'zh':
         child_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=200, chunk_overlap=0, separators=['。', '. '], keep_separator=True
+            chunk_size=200, chunk_overlap=0, separators=['。', '. '], keep_separator=False
         )
     else:
         child_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=400, chunk_overlap=0, separators=['. '], keep_separator=True
+            chunk_size=400, chunk_overlap=0, separators=['. '], keep_separator=False
         )
 
     retriever = ParentDocumentRetriever(
