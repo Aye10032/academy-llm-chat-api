@@ -20,6 +20,7 @@ dependencies = [
     "markdownify>=0.14.1",
     "nebula3-python>=3.8.3",
     "passlib[bcrypt]>=1.7.4",
+    "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.7.1",
     "pydantic[email]>=2.10.6",
     "pyjwt>=2.10.1",
