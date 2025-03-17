@@ -205,9 +205,10 @@ class SqliteDocStore(BaseStore[str, Document]):
         cur.close()
 
 
-def create_document_model(table_name: str, metadata: MetaData):
-    class DocumentModel(SQLModel, table=True, metadata=metadata):
+def create_document_model(table_name: str, self_metadata: MetaData):
+    class DocumentModel(SQLModel, table=True):
         __tablename__ = table_name
+        metadata = self_metadata
 
         doc_id: str = Field(primary_key=True)
         content: dict
