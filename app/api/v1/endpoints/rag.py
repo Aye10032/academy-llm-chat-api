@@ -16,7 +16,7 @@ import app.crud.chat_session as chat_crud
 import app.crud.knowledge_base as kb_crud
 import app.crud.user as user_crud
 from app.core.security import get_current_active_user
-from app.db.session import SessionDep, engine
+from app.db.session import SessionDep, profile_engin
 from app.models import ChatSessionTable, UserTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
 from app.schemas.knowledge_base import KnowledgeBase
@@ -100,7 +100,7 @@ async def delete_chat(
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     chat_crud.delete(session, chat_uid)
-    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=profile_engin)
     chat_message_history.clear()
 
 
@@ -124,7 +124,7 @@ async def get_chat(
 async def get_chat_history(
     chat_uid: str, current_user: Annotated[UserTable, Depends(get_current_active_user)]
 ):
-    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=profile_engin)
     return chat_message_history.messages
 
 
@@ -142,7 +142,7 @@ async def chat(
     temperature: float = Form(...),
     context_length: int = Form(...),
 ):
-    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=profile_engin)
     knowledge_base = kb_crud.get(session, knowledge_base_uid)
     table_name = knowledge_base.table_name
 

@@ -1,6 +1,7 @@
 import sqlite3
 from json import JSONDecodeError
-from typing import Any, Iterator, Optional, Sequence
+from pathlib import Path
+from typing import Any, Iterator, Optional, Sequence, Union, AsyncIterator
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -11,8 +12,13 @@ from langchain_milvus.vectorstores import milvus
 from loguru import logger
 from pymilvus import DataType, MilvusClient
 from pymilvus.orm.types import infer_dtype_bydata
+from sqlalchemy import Engine, MetaData, create_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlmodel import Session, SQLModel, Field, select, col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
+from app.db.session import doc_engin, doc_metadata
 
 
 class SqliteDocStore(BaseStore[str, Document]):
@@ -199,6 +205,156 @@ class SqliteDocStore(BaseStore[str, Document]):
         cur.close()
 
 
+def create_document_model(table_name: str, metadata: MetaData):
+    class DocumentModel(SQLModel, table=True, metadata=metadata):
+        __tablename__ = table_name
+
+        doc_id: str = Field(primary_key=True)
+        content: dict
+
+    return DocumentModel
+
+
+class SQLStore(BaseStore[str, Document]):
+    def __init__(
+        self,
+        *,
+        table_name: str,
+        db_url: Optional[Union[str, Path]] = None,
+        engine: Optional[Union[Engine, AsyncEngine]] = None,
+        engine_kwargs: Optional[dict[str, Any]] = None,
+        metadata: Optional[MetaData] = None,
+        async_mode: Optional[bool] = None,
+    ):
+        if db_url is None and engine is None:
+            raise ValueError('Must specify either db_url or engine')
+
+        if db_url is not None and engine is not None:
+            raise ValueError('Must specify either db_url or engine, not both')
+
+        _engine: Union[Engine, AsyncEngine]
+        if db_url:
+            if async_mode is None:
+                async_mode = False
+            if async_mode:
+                _engine = create_async_engine(
+                    url=str(db_url),
+                    **(engine_kwargs or {}),
+                )
+            else:
+                _engine = create_engine(url=str(db_url), **(engine_kwargs or {}))
+        elif engine:
+            _engine = engine
+        else:
+            raise AssertionError('Something went wrong with configuration of engine.')
+
+        self.engine = _engine
+        self.metadata = metadata
+        self.table_name = table_name
+
+        self.document_model = create_document_model(table_name, metadata)
+
+    def create_schema(self) -> None:
+        if self.metadata:
+            self.metadata.create_all(self.engine)
+        else:
+            SQLModel.metadata.create_all(self.engine)
+
+    async def acreate_schema(self) -> None:
+        assert isinstance(self.engine, AsyncEngine)
+
+        async with self.engine.begin() as session:
+            if self.metadata:
+                await session.run_sync(self.metadata.create_all)
+            else:
+                await session.run_sync(SQLModel.metadata.create_all)
+
+    def drop(self) -> None:
+        metadata = MetaData()
+        metadata.reflect(bind=self.engine)
+        table = metadata.tables[self.table_name]
+        if table is not None:
+            SQLModel.metadata.drop_all(self.engine, [table])
+
+    async def amget(self, keys: Sequence[str]) -> list[Optional[Document]]:
+        async with AsyncSession(self.engine) as session:
+            query = select(self.document_model).where(col(self.document_model.doc_id).in_(keys))
+            result = await session.exec(query)
+            docs = result.all()
+
+            ordered_values = {key: type[Document] for key in keys}
+            for doc in docs:
+                val = Document.model_validate(doc.content)
+                val.metadata['doc_id'] = doc.doc_id
+                ordered_values[doc.doc_id] = val
+
+            return [ordered_values[key] for key in keys]
+
+    def mget(self, keys: Sequence[str]) -> list[Optional[Document]]:
+        with Session(self.engine) as session:
+            query = select(self.document_model).where(col(self.document_model.doc_id).in_(keys))
+            result = session.exec(query)
+            docs = result.all()
+
+            ordered_values = {key: type[Document] for key in keys}
+            for doc in docs:
+                val = Document.model_validate(doc.content)
+                val.metadata['doc_id'] = doc.doc_id
+                ordered_values[doc.doc_id] = val
+
+            return [ordered_values[key] for key in keys]
+
+    async def amset(self, key_value_pairs: Sequence[tuple[str, Document]]) -> None:
+        with AsyncSession(self.engine) as session:
+            for doc_id, doc in key_value_pairs:
+                content = doc.model_dump()
+                db_doc = self.document_model(doc_id=doc_id, content=content)
+                session.add(db_doc)
+            await session.commit()
+
+    def mset(self, key_value_pairs: Sequence[tuple[str, Document]]) -> None:
+        with Session(self.engine) as session:
+            for doc_id, doc in key_value_pairs:
+                content = doc.model_dump()
+                db_doc = self.document_model(doc_id=doc_id, content=content)
+                session.add(db_doc)
+            session.commit()
+
+    async def amdelete(self, keys: Sequence[str]) -> None:
+        async with AsyncSession(self.engine) as session:
+            query = select(self.document_model).where(col(self.document_model.doc_id).in_(keys))
+            results = session.exec(query)
+            docs = results.all()
+            await session.delete(docs)
+            await session.commit()
+
+    def mdelete(self, keys: Sequence[str]) -> None:
+        with Session(self.engine) as session:
+            query = select(self.document_model).where(col(self.document_model.doc_id).in_(keys))
+            results = session.exec(query)
+            docs = results.all()
+            session.delete(docs)
+            session.commit()
+
+    async def ayield_keys(self, *, prefix: Optional[str] = None) -> AsyncIterator[str]:
+        async with AsyncSession(self.engine) as session:
+            query = select(self.document_model.doc_id)
+            if prefix:
+                query = query.where(col(self.document_model.doc_id).like(f'{prefix}%'))
+            results = await session.exec(query)
+            for (doc_id,) in results:
+                yield doc_id
+
+    def yield_keys(self, *, prefix: Optional[str] = None) -> Iterator[str]:
+        with Session(self.engine) as session:
+            query = select(self.document_model.doc_id)
+            if prefix:
+                query = query.where(col(self.document_model.doc_id).like(f'{prefix}%'))
+            results = session.exec(query)
+            for (doc_id,) in results:
+                yield doc_id
+
+
 def create_vector_db(
     table_name: str,
     embedding_model: Embeddings,
@@ -294,11 +450,15 @@ def get_vector_db(
 
 
 def get_doc_db(table_name: str, *, drop_old: bool = False) -> BaseStore:
-    doc_store = SqliteDocStore(
-        connection_string=get_settings().knowledge_base.DOC_URL,
-        table_name=table_name,
-        drop_old=drop_old,
-    )
+    # doc_store = SqliteDocStore(
+    #     connection_string=get_settings().knowledge_base.DOC_URL,
+    #     table_name=table_name,
+    #     drop_old=drop_old,
+    # )
+    doc_store = SQLStore(table_name=table_name, engine=doc_engin, metadata=doc_metadata)
+    if drop_old:
+        doc_store.drop()
+        doc_store.create_schema()
 
     return doc_store
 

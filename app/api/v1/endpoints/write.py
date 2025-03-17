@@ -23,7 +23,7 @@ import app.crud.user as user_crud
 import app.crud.write_project as project_crud
 from app.core.config import get_settings
 from app.core.security import get_current_active_user
-from app.db.session import SessionDep, engine
+from app.db.session import SessionDep, profile_engin
 from app.models import ChatSessionTable, ManuscriptTable, UserTable, WriteProjectTable
 from app.models.write_project import ChatRecordTable, ProjectSourcesTable
 from app.schemas.chat_session import ChatSession, ChatSessionUpdate
@@ -107,7 +107,7 @@ async def delete_project(
     # TODO 视情况是否要删除其他东西
     chat_sessions = chat_crud.get_list(session, project_uid, str(current_user.email))
     for chat_session in chat_sessions:
-        chat_message_history = SQLChatMessageHistory(session_id=chat_session.uid, connection=engine)
+        chat_message_history = SQLChatMessageHistory(session_id=chat_session.uid, connection=profile_engin)
         chat_message_history.clear()
         chat_crud.delete(session, chat_session.uid)
 
@@ -242,7 +242,7 @@ async def delete_chat(
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
     chat_crud.delete(session, chat_uid)
-    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=profile_engin)
     chat_message_history.clear()
 
 
@@ -265,7 +265,7 @@ async def get_chat(
     chat_uid: str,
     current_user: Annotated[UserTable, Depends(get_current_active_user)],
 ):
-    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=profile_engin)
     return chat_message_history.messages
 
 
@@ -291,7 +291,7 @@ async def chat(
     logger.info(f'{current_user.username}: {message}')
     user_email = current_user.email
 
-    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=engine)
+    chat_message_history = SQLChatMessageHistory(session_id=chat_uid, connection=profile_engin)
 
     uploaded_files = []
     if files:

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session
 
 import app.crud.knowledge_base as kb_crud
-from app.db.session import engine
+from app.db.session import profile_engin
 from llm.core.model import load_embedding, load_llm
 from llm.core.template import SELECT_KNOWLEDGE_BASE_SYSTEM_ZH
 from llm.rag.retriever import ExprRetriever
@@ -54,7 +54,7 @@ class SelectKnowledgeBase(BaseTool):
     def _run(
         self, query: str, config: Optional[RunnableConfig] = None
     ) -> SelectKnowledgeBaseOutput:
-        with Session(engine) as session:
+        with Session(profile_engin) as session:
             kb_list = kb_crud.get_list(session, 0, 20)
 
         if self.available_knowledge_bases:

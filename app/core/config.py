@@ -18,7 +18,6 @@ class BaseSetting(BaseModel):
     model_config = ConfigDict(alias_generator=lambda field_name: field_name.lower())
 
     DATABASE_URL: str
-    GRAPH_STORE_URL: str
     TEMP_DIR: str
 
     @model_validator(mode='after')

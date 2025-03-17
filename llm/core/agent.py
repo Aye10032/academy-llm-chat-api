@@ -25,7 +25,7 @@ from sqlmodel import Session
 from tqdm import tqdm
 
 import app.crud.manuscript as manu_crud
-from app.db.session import engine
+from app.db.session import profile_engin
 from app.models import ManuscriptTable
 from app.schemas.manuscript import Manuscript, ManuscriptType
 from llm.core.model import load_llm, load_reranker
@@ -352,7 +352,7 @@ class KnowledgeManageAgent(BaseModel):
             content=body,
             file_type=ManuscriptType.DRAFT,
         )
-        with Session(engine) as session:
+        with Session(profile_engin) as session:
             manu_crud.insert(session, manuscript)
 
         return {
@@ -574,7 +574,7 @@ class GenerateAgent(BaseModel):
         tool_call: ToolCall = state['messages'][-1].tool_calls[0]
         tool_call_id = tool_call['id']
 
-        with Session(engine) as session:
+        with Session(profile_engin) as session:
             drafts = manu_crud.get_drafts(session, state['project_uid'])
 
         reranker = load_reranker()

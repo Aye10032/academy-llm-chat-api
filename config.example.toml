@@ -1,6 +1,5 @@
 [base]
-database_url = "sqlite:///./data/app.db"
-graph_store_url = "sqlite:///./data/graph.db"
+database_url = "postgresql://root:123456@127.0.0.1:5432/llm_chat"
 temp_dir = "./temp/"
 
 [auth]
@@ -43,7 +42,7 @@ device = "cuda"
 
 [knowledge_base]
 store_path = "./data/knowledge_base"
-doc_url = "sqlite:///./data/knowledge_base/document.db"
+doc_url = "postgresql://root:123456@127.0.0.1:5432/documents"
 
 [knowledge_base.milvus]
 uri = "http://127.0.0.1:19530"
