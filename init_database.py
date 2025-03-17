@@ -316,7 +316,6 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str, download_path: str):
     now_time = datetime.now()
     if drop_old:
         kb_crud.delete_by_name(session, db_name)
-        logger.info('初始化图数据库...')
 
     embedding_model = load_embedding()
     if now_kb := kb_crud.get_by_name(session, db_name):
@@ -345,6 +344,7 @@ def init_pubmed_db(ctx, concurrency: int, db_name: str, download_path: str):
             drop_old=drop_old,
         )
 
+    logger.info('初始化图数据库...')
     init_pubmed_graph(space_name=db_name, drop_old=drop_old)
 
     doc_db = get_doc_db(db_name, drop_old=drop_old)

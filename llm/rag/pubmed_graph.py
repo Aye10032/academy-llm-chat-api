@@ -46,9 +46,6 @@ def init_pubmed_graph(space_name: str = 'pubmed', drop_old: bool = False):
                         not_null=True,
                     ),
                     Prop[str](prop_name='doi', data_type=PropType.STRING, comment='文献的doi编号'),
-                    Prop[str](
-                        prop_name='abstract', data_type=PropType.STRING, comment='文献的摘要信息'
-                    ),
                     Prop[int](
                         prop_name='reference_num',
                         data_type=PropType.INT64,
@@ -136,7 +133,7 @@ def insert_paper(pubmed_data: PubMedData, *, space_name: str = 'pubmed'):
         store.use_space(space_name)
 
         pubmed_dict = pubmed_data.model_dump(
-            exclude={'author', 'journal', 'keywords', 'references'}, exclude_none=True
+            exclude={'author', 'journal', 'keywords', 'references', 'abstract'}, exclude_none=True
         )
         store.insert_vertex('Paper', pubmed_dict, pubmed_data.pmid)
 
