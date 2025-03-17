@@ -35,7 +35,7 @@ class MarkdownLoader(BaseFileLoader):
         Returns:
             一个元组，第一个元素为文档的meta信息，第二个为langchain格式的Document对象列表
         """
-        assert origin_file_path.lower().endswith('.md')
+        assert origin_file_path.name.lower().endswith('.md')
 
         with open(origin_file_path, 'r', encoding='utf-8') as f:
             md_text = f.read()
