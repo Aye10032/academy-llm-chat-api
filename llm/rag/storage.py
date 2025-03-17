@@ -379,7 +379,9 @@ def create_vector_db(
     vector_field_embeddings = embedding_model.embed_documents(['test'])
     dim = len(vector_field_embeddings[0])
 
-    client = MilvusClient(**get_settings().knowledge_base.milvus.get_conn_args(db_name))
+    client = MilvusClient(**get_settings().knowledge_base.milvus.get_conn_args())
+    if db_name not in client.list_databases():
+        client.create_database(db_name)
 
     if drop_old and client.has_collection(table_name):
         client.drop_collection(table_name)
