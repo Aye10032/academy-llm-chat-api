@@ -107,7 +107,9 @@ async def delete_project(
     # TODO 视情况是否要删除其他东西
     chat_sessions = chat_crud.get_list(session, project_uid, str(current_user.email))
     for chat_session in chat_sessions:
-        chat_message_history = SQLChatMessageHistory(session_id=chat_session.uid, connection=profile_engin)
+        chat_message_history = SQLChatMessageHistory(
+            session_id=chat_session.uid, connection=profile_engin
+        )
         chat_message_history.clear()
         chat_crud.delete(session, chat_session.uid)
 
